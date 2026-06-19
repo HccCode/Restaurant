@@ -3,71 +3,70 @@ if(navigator.serviceWorker){
 }
 
 ;(function(){
+    let sticky = false;
+    let currentPosition = 0;
+    let ticking = false; 
 
-    let sticky = false
-    let currentPosition = 0 
-    let ticking = false 
-
-    const imageCounter = $("[data-name='image-counter']").attr("content")
-    const email = "hectorum9214@gmail.com"
+    // Aquí le decimos que hay 3 imágenes en la sección de instalaciones
+    const imageCounter = 2; 
 
     $("#contact-form").on("submit",function(ev){
-        ev.preventDefault()
-        sendForm($(this))
-        return false
-    })
+        ev.preventDefault();
+        sendForm($(this));
+        return false;
+    });
 
-    $("#sticky-navigation").removeClass("hidden")
-    $("#sticky-navigation").slideUp(0)
+    $("#sticky-navigation").removeClass("hidden");
+    $("#sticky-navigation").slideUp(0);
 
+    // Carrusel automático para las instalaciones
     setInterval(()=>{
         if(currentPosition < imageCounter){
-            currentPosition++	
+            currentPosition++;
         }else{
-            currentPosition = 0
+            currentPosition = 0;
         }
 
         $("#gallery .inner").css({
-            left:"-"+currentPosition*100+"%"
-        })
-    },4000)
+            left: "-" + currentPosition * 100 + "%"
+        });
+    }, 4000);
 
+    // Menú Sticky con Scroll optimizado
     $(window).scroll(()=>{
         if (!ticking) {
             window.requestAnimationFrame(function() {
-                const inBottom = isInBottom()
+                const inBottom = isInBottom();
 
                 if(inBottom && !sticky){
-                    sticky = true
-                    stickNavigation()
+                    sticky = true;
+                    stickNavigation();
                 } 
                 if(!inBottom && sticky){
-                    sticky = false
-                    unStickNavigation()
+                    sticky = false;
+                    unStickNavigation();
                 }
                 ticking = false;
             });
             ticking = true;
         }
-    })
+    });
 
     function stickNavigation(){
-        $("#description").addClass("fixed").removeClass("absolute")
-        $("#navigation").slideUp()
-        $("#sticky-navigation").slideDown("fast")
+        $("#description").addClass("fixed").removeClass("absolute");
+        $("#navigation").slideUp();
+        $("#sticky-navigation").slideDown("fast");
     }
 
     function unStickNavigation(){
-        $("#description").removeClass("fixed").addClass("absolute")
-        $("#navigation").slideDown("fast")
-        $("#sticky-navigation").slideUp("fast")
+        $("#description").removeClass("fixed").addClass("absolute");
+        $("#navigation").slideDown("fast");
+        $("#sticky-navigation").slideUp("fast");
     }
 
     function isInBottom(){
-        const $description = $("#description")
-        const descriptionHeight = $description.height()
-
-        return $(window).scrollTop() > $(window).height() - (descriptionHeight * 2)
+        const $description = $("#description");
+        const descriptionHeight = $description.height();
+        return $(window).scrollTop() > $(window).height() - (descriptionHeight * 2);
     }
-
-})()
+})();

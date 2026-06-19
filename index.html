@@ -1,189 +1,94 @@
 <!DOCTYPE html>
-<html class="no-js" lang="es">
-  <head>
-    <meta charset="utf-8">
-    <title>Sabor Mexicali | Restaurante</title>
-    <meta content="El mejor restaurante de Mexicali." name="description">
-    <link href="https://fonts.googleapis.com/css?family=Dancing+Script" rel="stylesheet" type="text/css">
-    <link href="https://fonts.googleapis.com/css?family=Montserrat" rel="stylesheet" type="text/css">
-    <link href="https://cdn-icons-png.flaticon.com/512/3170/3170733.png" rel="shortcut icon">
-    <link href="css/normalize.css" rel="stylesheet">
-    <link href="css/bootstrap.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/flexboxgrid/6.3.0/flexboxgrid.min.css" rel="stylesheet">
-    <link href="css/style.css" rel="stylesheet">
-    <meta content="width=device-width, initial-scale=1" name="viewport">
-    <meta content="2" data-name="image-counter">
-    <script src="js/vendor/modernizr-2.8.3.min.js"></script>
-  </head>
-  <body>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Sabor Mexicali | Auténtica Gastronomía</title>
+  <meta name="description" content="El mejor restaurante de cortes y mariscos en la ciudad.">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/flexboxgrid/6.3.0/flexboxgrid.min.css" rel="stylesheet">
+  <link href="css/normalize.css" rel="stylesheet">
+  <link href="css/style.css" rel="stylesheet">
+</head>
+<body>
+
+  <!-- HERO SECTION -->
+  <header class="hero-section" id="home">
     <div class="video-container">
-      <video autoplay muted height="720" loop poster="https://images.unsplash.com/photo-1514933651103-005eec06c04b?w=1280&q=80" width="1280">
+      <div class="video-overlay"></div>
+      <video autoplay muted loop playsinline poster="https://images.unsplash.com/photo-1514933651103-005eec06c04b?w=1280&q=80">
         <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
       </video>
     </div>
+    
+    <div class="hero-content text-center white-text">
+      <img src="https://cdn-icons-png.flaticon.com/512/3170/3170733.png" class="logo" alt="Logo Sabor Mexicali">
+      <h1 class="Montserrat title">Sabor Mexicali</h1>
+      <p class="subtitle slim">Fuego, Sabor y Tradición</p>
+    </div>
+  </header>
 
-    <div class="row full-height middle-xs center-xs relative up" id="home">
-      <div class="col-xs-12">
-        <div class="box white-text">
-          <img src="https://cdn-icons-png.flaticon.com/512/3170/3170733.png" width="150" alt="Logo Restaurante Sabor Mexicali" style="filter: invert(1);">
-          <h1 class="Montserrat title no-margin">Sabor Mexicali</h1>
-          <p id="is-open">
-            <i class="glyphicon glyphicon-time"></i>
-            Abierto ahora
-          </p>
-        </div>
+  <!-- STICKY NAVIGATION -->
+  <nav id="sticky-navigation" class="glass-nav hidden">
+    <ul class="list-inline text-center">
+      <li><a href="#home">Inicio</a></li>
+      <li><a href="#menu">Menú</a></li>
+      <li><a href="#gallery">Instalaciones</a></li>
+      <li><a href="#contact">Reservaciones</a></li>
+      <li><a href="#location">Ubicación</a></li>
+    </ul>
+  </nav>
+
+  <!-- MENU SECTION -->
+  <section id="menu" class="section-padding text-center">
+    <h2 class="Montserrat section-title">Nuestro Menú</h2>
+    <div class="row">
+      <div class="col-md-4 col-sm-6 col-xs-12 menu-card" style="background-image:url('https://images.unsplash.com/photo-1544025162-8111142154ea?w=800&q=80')">
+        <div class="screen"><h3 class="Montserrat">Cortes Finos</h3></div>
       </div>
+      <div class="col-md-4 col-sm-6 col-xs-12 menu-card" style="background-image:url('https://images.unsplash.com/photo-1565680018434-b513d5e5fd47?w=800&q=80')">
+        <div class="screen"><h3 class="Montserrat">Mariscos</h3></div>
+      </div>
+      <div class="col-md-4 col-sm-6 col-xs-12 menu-card" style="background-image:url('https://images.unsplash.com/photo-1551504734-5ee1c4a1479b?w=800&q=80')">
+        <div class="screen"><h3 class="Montserrat">Especialidades</h3></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INFO CARD -->
+  <section class="container section-padding">
+    <div class="card info-card text-center">
+      <h3 class="Montserrat">La mejor experiencia culinaria</h3>
+      <p class="text-justify">
+        Utilizamos los ingredientes más frescos de la región para llevar hasta tu mesa una experiencia inolvidable. El ambiente perfecto para compartir.
+      </p>
+    </div>
+  </section>
+
+  <!-- RESERVACIONES -->
+  <section id="contact" class="dark-section section-padding white-text">
+    <div class="container text-center">
+      <h2 class="Montserrat section-title">Reserva tu Mesa</h2>
+      <p>Asegura tu lugar en segundos.</p>
       
-      <nav class="fixed top right navigation white-text" id="navigation">
-        <ul class="list-inline">
-          <li><a href="#home">Inicio</a></li>
-          <li><a href="#menu">Menú</a></li>
-          <li><a href="#gallery">Instalaciones</a></li>
-          <li><a href="#contact">Reservaciones</a></li>
-          <li><a href="#location">Ubicación</a></li>
-        </ul>
-      </nav>
-
-      <div class="absolute black large-padding white-text full-width" id="description">
-        <div class="row middle-xs center-xs">
-          <div class="col-xs-7 col-sm-6 white-text medium">
-            El Auténtico Sabor de Mexicali
-          </div>
-          <div class="col-xs hidden" id="sticky-navigation">
-            <div class="box">
-              <nav class="text-right navigation">
-                <ul class="list-inline">
-                  <li><a href="#home">Inicio</a></li>
-                  <li><a href="#menu">Menú</a></li>
-                  <li><a href="#gallery">Instalaciones</a></li>
-                  <li><a href="#contact">Reservaciones</a></li>
-                  <li><a href="#location">Ubicación</a></li>
-                </ul>
-              </nav>
-            </div>
-          </div>
+      <form action="#" class="modern-form" id="contact-form">
+        <div class="input-group">
+          <input type="text" name="name" required>
+          <label>Nombre Completo</label>
         </div>
-      </div>
+        <div class="input-group">
+          <input type="email" name="email" required>
+          <label>Correo Electrónico</label>
+        </div>
+        <div class="input-group">
+          <input type="text" name="details" required>
+          <label>Fecha, Hora y Personas</label>
+        </div>
+        <button type="submit" class="btn-primary" id="submit-btn">Confirmar Reservación</button>
+      </form>
     </div>
+  </section>
 
-    <div class="text-center relative" id="menu">
-      <div class="absolute white" id="menu-title">
-        <h2 class="Montserrat subtitle">Nuestro Menú</h2>
-      </div>
-      <div class="row">
-        <div class="col-md-4 col-lg-3 col-sm-6 col-xs-12 pictures" style="background-image:url('https://images.unsplash.com/photo-1544025162-8111142154ea?w=800&q=80')">
-          <div class="screen">
-            <div class="row middle-xs full-height">
-              <div class="col-xs-12 white-text"><h3 class="Montserrat subtitle medium">Cortes de Carne</h3></div>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-4 col-lg-3 col-sm-6 col-xs-12 pictures" style="background-image:url('https://images.unsplash.com/photo-1565680018434-b513d5e5fd47?w=800&q=80')">
-          <div class="screen">
-            <div class="row middle-xs full-height">
-              <div class="col-xs-12 white-text"><h3 class="Montserrat subtitle medium">Mariscos Frescos</h3></div>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-4 col-lg-3 col-sm-6 col-xs-12 pictures" style="background-image:url('https://images.unsplash.com/photo-1551504734-5ee1c4a1479b?w=800&q=80')">
-          <div class="screen">
-            <div class="row middle-xs full-height">
-              <div class="col-xs-12 white-text"><h3 class="Montserrat subtitle medium">Especialidades</h3></div>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-4 col-lg-3 col-sm-6 col-xs-12 pictures" style="background-image:url('https://images.unsplash.com/photo-1551024601-bec78aea704b?w=800&q=80')">
-          <div class="screen">
-            <div class="row middle-xs full-height">
-              <div class="col-xs-12 white-text"><h3 class="Montserrat subtitle medium">Postres Caseros</h3></div>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-4 col-lg-3 col-sm-6 col-xs-12 pictures" style="background-image:url('https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=800&q=80')">
-          <div class="screen">
-            <div class="row middle-xs full-height">
-              <div class="col-xs-12 white-text"><h3 class="Montserrat subtitle medium">Mixología</h3></div>
-            </div>
-          </div>
-        </div>
-        <div class="col-md-4 col-lg-3 col-sm-6 col-xs-12 pictures" style="background-image:url('https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=800&q=80')">
-          <div class="screen">
-            <div class="row middle-xs full-height">
-              <div class="col-xs-12 white-text"><h3 class="Montserrat subtitle medium">Desayunos</h3></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="gallery">
-      <div class="inner">
-        <div class="image" style="background-image:url('https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&q=80');"></div>
-        <div class="image" style="background-image:url('https://images.unsplash.com/photo-1552566626-52f8b828add9?w=1200&q=80');"></div>
-        <div class="image" style="background-image:url('https://images.unsplash.com/photo-1559339352-11d035aa65de?w=1200&q=80');"></div>
-      </div>
-    </div>
-
-    <div class="container">
-      <div class="card white black-text text-center relative">
-        <h3 class="slim">
-          En
-          <strong class="Montserrat medium">Sabor Mexicali</strong>
-          disfrutar de la buena comida nunca fue tan
-          <strong class="Montserrat medium">Fácil</strong>
-        </h3>
-        <div class="text-justify top-space bottom-space">
-          Utilizamos los ingredientes más frescos de la región para llevar hasta tu mesa una experiencia culinaria inolvidable. Ya sea una cena romántica, una reunión familiar o un almuerzo de negocios, tenemos el espacio perfecto para ti.
-          <strong class="Montserrat medium">¡Te esperamos!</strong>
-        </div>
-      </div>
-    </div>
-
-    <div class="black white-text full-height" id="contact">
-      <div class="row middle-xs full-height">
-        <div class="col-xs-12">
-          <div class="box">
-            <p class="text-center medium" id="info-contacto">Presiona enter para avanzar y realizar tu reservación.</p>
-            <form action="https://formspree.io/hectorum9214@gmail.com" class="step-form" id="contact-form" method="POST">
-              <div class="row center-xs">
-                <div class="col-xs-2 col-md-1 text-center">
-                  <div class="box">
-                    <div class="path-step active"></div><br>
-                    <div class="path-step"></div><br>
-                    <div class="path-step"></div><br>
-                  </div>
-                </div>
-                <div class="col-xs-5">
-                  <div class="box">
-                    <fieldset class="step active">
-                      <input class="input" name="email" placeholder="Tu Correo Electrónico" required type="email">
-                    </fieldset>
-                    <fieldset class="step">
-                      <input class="input" name="name" placeholder="Nombre de la Reservación" required type="text">
-                    </fieldset>
-                    <fieldset class="step">
-                      <textarea class="input" name="body" placeholder="Fecha, Hora y Personas..." required></textarea>
-                    </fieldset>
-                  </div>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="location">
-      <div id="map"></div>
-      <div class="black large-padding white-text text-center medium" id="message">Encuéntranos en el corazón de la ciudad.</div>
-    </div>
-
-    <script crossorigin="anonymous" integrity="sha256-JmvOoLtYsmqlsWxa7mDSLMwa6dZ9rrIdtrrVYRnDRH0=" src="https://code.jquery.com/jquery-3.0.0.min.js"></script>
-    <script>window.jQuery || document.write("<script src='/js/vendor/jquery-1.12.0.min.js'><\/script>");</script>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBqJfXcEQQ4Y16Sg6pw4VizBinyIGkqJkU"></script>
-    <script src="/dist/maps.js"></script>
-    <script src="/dist/form_object.js"></script>
-    <script src="/dist/main.js"></script>
-    <script src="/dist/steps.js"></script>
-  </body>
+  <script src="js/main.js"></script>
+</body>
 </html>

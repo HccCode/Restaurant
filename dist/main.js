@@ -1,72 +1,63 @@
-if(navigator.serviceWorker){
-    navigator.serviceWorker.register("/sw.js")
-}
+document.addEventListener('DOMContentLoaded', () => {
+    // 1. Service Worker
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW setup failed', err));
+    }
 
-;(function(){
-    let sticky = false;
-    let currentPosition = 0;
-    let ticking = false; 
+    // 2. Intersection Observer para Sticky Header
+    const nav = document.getElementById('sticky-navigation');
+    const heroSection = document.getElementById('home');
 
-    // Aquí le decimos que hay 3 imágenes en la sección de instalaciones
-    const imageCounter = 2; 
+    const observerOptions = {
+        root: null,
+        threshold: 0.1, // Se activa cuando queda un 10% del Hero visible
+        rootMargin: "0px"
+    };
 
-    $("#contact-form").on("submit",function(ev){
-        ev.preventDefault();
-        sendForm($(this));
-        return false;
-    });
-
-    $("#sticky-navigation").removeClass("hidden");
-    $("#sticky-navigation").slideUp(0);
-
-    // Carrusel automático para las instalaciones
-    setInterval(()=>{
-        if(currentPosition < imageCounter){
-            currentPosition++;
-        }else{
-            currentPosition = 0;
-        }
-
-        $("#gallery .inner").css({
-            left: "-" + currentPosition * 100 + "%"
+    const navObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (!entry.isIntersecting) {
+                // El Hero ya no está visible, mostrar navbar
+                nav.classList.remove('hidden');
+            } else {
+                // El Hero está visible, ocultar navbar
+                nav.classList.add('hidden');
+            }
         });
-    }, 4000);
+    }, observerOptions);
 
-    // Menú Sticky con Scroll optimizado
-    $(window).scroll(()=>{
-        if (!ticking) {
-            window.requestAnimationFrame(function() {
-                const inBottom = isInBottom();
-
-                if(inBottom && !sticky){
-                    sticky = true;
-                    stickNavigation();
-                } 
-                if(!inBottom && sticky){
-                    sticky = false;
-                    unStickNavigation();
-                }
-                ticking = false;
-            });
-            ticking = true;
-        }
-    });
-
-    function stickNavigation(){
-        $("#description").addClass("fixed").removeClass("absolute");
-        $("#navigation").slideUp();
-        $("#sticky-navigation").slideDown("fast");
+    if (heroSection) {
+        navObserver.observe(heroSection);
     }
 
-    function unStickNavigation(){
-        $("#description").removeClass("fixed").addClass("absolute");
-        $("#navigation").slideDown("fast");
-        $("#sticky-navigation").slideUp("fast");
-    }
+    // 3. Formulario UX - Simulador de Carga
+    const form = document.getElementById('contact-form');
+    const submitBtn = document.getElementById('submit-btn');
 
-    function isInBottom(){
-        const $description = $("#description");
-        const descriptionHeight = $description.height();
-        return $(window).scrollTop() > $(window).height() - (descriptionHeight * 2);
+    if (form) {
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            // Estado de carga
+            const originalText = submitBtn.innerText;
+            submitBtn.innerText = "Procesando...";
+            submitBtn.style.opacity = "0.7";
+            submitBtn.disabled = true;
+
+            // Simulación de envío a servidor (ej. Formspree / API en Render.com)
+            setTimeout(() => {
+                submitBtn.innerText = "¡Reservación Confirmada!";
+                submitBtn.style.backgroundColor = "#4CAF50"; // Verde éxito
+                submitBtn.style.opacity = "1";
+                form.reset();
+
+                // Restaurar botón después de 3 segundos
+                setTimeout(() => {
+                    submitBtn.innerText = originalText;
+                    submitBtn.style.backgroundColor = "var(--primary-color)";
+                    submitBtn.disabled = false;
+                }, 3000);
+            }, 1500);
+        });
     }
-})();
+});

@@ -1,1 +1,73 @@
-"use strict";navigator.serviceWorker&&navigator.serviceWorker.register("/sw.js"),function(){function i(){$("#description").addClass("fixed").removeClass("absolute"),$("#navigation").slideUp(),$("#sticky-navigation").slideDown("fast")}function n(){$("#description").removeClass("fixed").addClass("absolute"),$("#navigation").slideDown("fast"),$("#sticky-navigation").slideUp("fast")}function t(){var i=$("#description"),n=i.height();return $(window).scrollTop()>$(window).height()-2*n}var e=!1,s=0,a=$("[data-name='image-counter']").attr("content");$("#contact-form").on("submit",function(i){return i.preventDefault(),sendForm($(this)),!1}),$("#sticky-navigation").removeClass("hidden"),$("#sticky-navigation").slideUp(0),setInterval(function(){a>s?s++:s=0,$("#gallery .inner").css({left:"-"+100*s+"%"})},4e3),$(window).scroll(function(){var s=t();s&&!e&&(e=!0,i()),!s&&e&&(e=!1,n())})}();
+if(navigator.serviceWorker){
+    navigator.serviceWorker.register("/sw.js")
+}
+
+;(function(){
+
+    let sticky = false
+    let currentPosition = 0 
+    let ticking = false 
+
+    const imageCounter = $("[data-name='image-counter']").attr("content")
+    const email = "hectorum9214@gmail.com"
+
+    $("#contact-form").on("submit",function(ev){
+        ev.preventDefault()
+        sendForm($(this))
+        return false
+    })
+
+    $("#sticky-navigation").removeClass("hidden")
+    $("#sticky-navigation").slideUp(0)
+
+    setInterval(()=>{
+        if(currentPosition < imageCounter){
+            currentPosition++	
+        }else{
+            currentPosition = 0
+        }
+
+        $("#gallery .inner").css({
+            left:"-"+currentPosition*100+"%"
+        })
+    },4000)
+
+    $(window).scroll(()=>{
+        if (!ticking) {
+            window.requestAnimationFrame(function() {
+                const inBottom = isInBottom()
+
+                if(inBottom && !sticky){
+                    sticky = true
+                    stickNavigation()
+                } 
+                if(!inBottom && sticky){
+                    sticky = false
+                    unStickNavigation()
+                }
+                ticking = false;
+            });
+            ticking = true;
+        }
+    })
+
+    function stickNavigation(){
+        $("#description").addClass("fixed").removeClass("absolute")
+        $("#navigation").slideUp()
+        $("#sticky-navigation").slideDown("fast")
+    }
+
+    function unStickNavigation(){
+        $("#description").removeClass("fixed").addClass("absolute")
+        $("#navigation").slideDown("fast")
+        $("#sticky-navigation").slideUp("fast")
+    }
+
+    function isInBottom(){
+        const $description = $("#description")
+        const descriptionHeight = $description.height()
+
+        return $(window).scrollTop() > $(window).height() - (descriptionHeight * 2)
+    }
+
+})()

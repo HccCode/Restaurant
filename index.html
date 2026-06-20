@@ -1,94 +1,15 @@
 <!DOCTYPE html>
 <html lang="es">
-<head>
-  <meta charset="utf-8">
-  <title>Sabor Mexicali | Auténtica Gastronomía</title>
-  <meta name="description" content="El mejor restaurante de cortes y mariscos en la ciudad.">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700&display=swap" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/flexboxgrid/6.3.0/flexboxgrid.min.css" rel="stylesheet">
-  <link href="css/normalize.css" rel="stylesheet">
-  <link href="css/style.css" rel="stylesheet">
-</head>
-<body>
-
-  <!-- HERO SECTION -->
-  <header class="hero-section" id="home">
-    <div class="video-container">
-      <div class="video-overlay"></div>
-      <video autoplay muted loop playsinline poster="https://images.unsplash.com/photo-1514933651103-005eec06c04b?w=1280&q=80">
-        <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
-      </video>
-    </div>
-    
-    <div class="hero-content text-center white-text">
-      <img src="https://cdn-icons-png.flaticon.com/512/3170/3170733.png" class="logo" alt="Logo Sabor Mexicali">
-      <h1 class="Montserrat title">Sabor Mexicali</h1>
-      <p class="subtitle slim">Fuego, Sabor y Tradición</p>
-    </div>
-  </header>
-
-  <!-- STICKY NAVIGATION -->
-  <nav id="sticky-navigation" class="glass-nav hidden">
-    <ul class="list-inline text-center">
-      <li><a href="#home">Inicio</a></li>
-      <li><a href="#menu">Menú</a></li>
-      <li><a href="#gallery">Instalaciones</a></li>
-      <li><a href="#contact">Reservaciones</a></li>
-      <li><a href="#location">Ubicación</a></li>
-    </ul>
-  </nav>
-
-  <!-- MENU SECTION -->
-  <section id="menu" class="section-padding text-center">
-    <h2 class="Montserrat section-title">Nuestro Menú</h2>
-    <div class="row">
-      <div class="col-md-4 col-sm-6 col-xs-12 menu-card" style="background-image:url('https://images.unsplash.com/photo-1544025162-8111142154ea?w=800&q=80')">
-        <div class="screen"><h3 class="Montserrat">Cortes Finos</h3></div>
-      </div>
-      <div class="col-md-4 col-sm-6 col-xs-12 menu-card" style="background-image:url('https://images.unsplash.com/photo-1565680018434-b513d5e5fd47?w=800&q=80')">
-        <div class="screen"><h3 class="Montserrat">Mariscos</h3></div>
-      </div>
-      <div class="col-md-4 col-sm-6 col-xs-12 menu-card" style="background-image:url('https://images.unsplash.com/photo-1551504734-5ee1c4a1479b?w=800&q=80')">
-        <div class="screen"><h3 class="Montserrat">Especialidades</h3></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- INFO CARD -->
-  <section class="container section-padding">
-    <div class="card info-card text-center">
-      <h3 class="Montserrat">La mejor experiencia culinaria</h3>
-      <p class="text-justify">
-        Utilizamos los ingredientes más frescos de la región para llevar hasta tu mesa una experiencia inolvidable. El ambiente perfecto para compartir.
-      </p>
-    </div>
-  </section>
-
-  <!-- RESERVACIONES -->
-  <section id="contact" class="dark-section section-padding white-text">
-    <div class="container text-center">
-      <h2 class="Montserrat section-title">Reserva tu Mesa</h2>
-      <p>Asegura tu lugar en segundos.</p>
-      
-      <form action="#" class="modern-form" id="contact-form">
-        <div class="input-group">
-          <input type="text" name="name" required>
-          <label>Nombre Completo</label>
-        </div>
-        <div class="input-group">
-          <input type="email" name="email" required>
-          <label>Correo Electrónico</label>
-        </div>
-        <div class="input-group">
-          <input type="text" name="details" required>
-          <label>Fecha, Hora y Personas</label>
-        </div>
-        <button type="submit" class="btn-primary" id="submit-btn">Confirmar Reservación</button>
-      </form>
-    </div>
-  </section>
-
-  <script src="js/main.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sabor.io | Gestión Restaurante</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  </head>
+  <body style="margin: 0; padding: 0; background-color: #020617;">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>

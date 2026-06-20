@@ -1,0 +1,97 @@
+import React, { useState, useMemo } from 'react';
+import './TablaReservaciones.css'; // Mantenemos tu CSS con los Sticky Headers
+
+export default function TablaReservaciones() {
+  // 1. Estado para almacenar la fecha que elige el gerente
+  // Por defecto, lo iniciamos vacío para mostrar todas las reservas
+  const [fechaFiltro, setFechaFiltro] = useState('');
+
+  // 2. Datos simulados (ahora incluyen la propiedad 'fecha')
+  const reservas = [
+    { id: 1, nombre: 'Familia Martínez', fecha: '2026-06-19', hora: '14:00', personas: 4, estado: 'Confirmada' },
+    { id: 2, nombre: 'Cena de Negocios', fecha: '2026-06-19', hora: '15:30', personas: 2, estado: 'En espera' },
+    { id: 3, nombre: 'Cumpleaños Sofía', fecha: '2026-06-20', hora: '19:00', personas: 8, estado: 'Confirmada' },
+    { id: 4, nombre: 'Aniversario', fecha: '2026-06-21', hora: '20:15', personas: 2, estado: 'Cancelada' },
+    { id: 5, nombre: 'Mesa Amigos', fecha: '2026-06-19', hora: '21:00', personas: 6, estado: 'Confirmada' },
+  ];
+
+  // 3. Lógica de Filtrado Optimizada
+  // useMemo asegura que el filtro solo se ejecute cuando cambia 'fechaFiltro' o 'reservas'
+  const reservasFiltradas = useMemo(() => {
+    if (!fechaFiltro) return reservas; // Si no hay filtro, devuelve todo
+    
+    return reservas.filter((reserva) => reserva.fecha === fechaFiltro);
+  }, [fechaFiltro, reservas]);
+
+  // Manejador para el input de fecha
+  const manejarCambioFecha = (e) => {
+    setFechaFiltro(e.target.value);
+  };
+
+  // Manejador para limpiar el filtro
+  const limpiarFiltro = () => {
+    setFechaFiltro('');
+  };
+
+  return (
+    <div className="w-full">
+      {/* --- Controles de Filtro --- */}
+      <div className="controles-filtro flex items-center gap-4 mb-4 p-2 bg-gray-50 rounded">
+        <label className="font-semibold text-gray-700">Filtrar por fecha:</label>
+        <input 
+          type="date" 
+          className="p-2 border border-gray-300 rounded outline-none focus:border-orange-500"
+          value={fechaFiltro}
+          onChange={manejarCambioFecha}
+        />
+        {fechaFiltro && (
+          <button 
+            onClick={limpiarFiltro}
+            className="text-sm bg-red-100 text-red-600 px-3 py-1 rounded hover:bg-red-200 transition"
+          >
+            Limpiar Filtro
+          </button>
+        )}
+      </div>
+
+      {/* --- Tabla con Sticky Headers --- */}
+      <div className="contenedor-scroll-tabla border border-gray-200 rounded">
+        <table className="tabla-moderna w-full text-left border-collapse">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Fecha</th>
+              <th>Hora</th>
+              <th>Pax</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reservasFiltradas.length > 0 ? (
+              reservasFiltradas.map((reserva) => (
+                <tr key={reserva.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="font-medium text-gray-800">{reserva.nombre}</td>
+                  <td className="text-gray-600">{reserva.fecha}</td>
+                  <td className="text-gray-600">{reserva.hora}</td>
+                  <td className="text-center font-bold text-gray-700">{reserva.personas}</td>
+                  <td>
+                    <span className={`badge ${reserva.estado.replace(' ', '-').toLowerCase()}`}>
+                      {reserva.estado}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              // --- Estado Vacío (UX) ---
+              <tr>
+                <td colSpan="5" className="text-center p-8 text-gray-500">
+                  No hay reservaciones para la fecha seleccionada ({fechaFiltro}).
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

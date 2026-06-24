@@ -1,95 +1,116 @@
 import React, { useState, useEffect } from 'react';
 
-// Sub-componente para calcular el tiempo en vivo de cada tarjeta
-const TimerPedido = ({ horaPedido }) => {
-  const [minutos, setMinutos] = useState(0);
+export default function Cocina({ pedidos, onCompletar }) {
+  // Estado para refrescar los minutos transcurridos en tiempo real
+  const [ahora, setAhora] = useState(Date.now());
 
   useEffect(() => {
-    const calcular = () => setMinutos(Math.floor((Date.now() - horaPedido) / 60000));
-    calcular(); // Cálculo inicial
-    const intervalo = setInterval(calcular, 10000); // Se actualiza cada 10 segundos
+    // El reloj de cocina late cada 10 segundos para actualizar los temporizadores
+    const intervalo = setInterval(() => setAhora(Date.now()), 10000); 
     return () => clearInterval(intervalo);
-  }, [horaPedido]);
+  }, []);
 
-  // Lógica de semáforo de cocina
-  let colorClass = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
-  let dotClass = "bg-emerald-400";
-  let pulse = false;
-
-  if (minutos >= 15) {
-    colorClass = "bg-rose-500/20 text-rose-400 border-rose-500/30";
-    dotClass = "bg-rose-400";
-    pulse = true;
-  } else if (minutos >= 10) {
-    colorClass = "bg-amber-500/20 text-amber-400 border-amber-500/30";
-    dotClass = "bg-amber-400";
-  }
+  // Calculador de minutos en vivo con indicador de demora
+  const calcularTiempo = (horaMilisegundos) => {
+    if (!horaMilisegundos) return { texto: '0 min', alerta: false };
+    const diffMinutos = Math.floor((ahora - new Date(horaMilisegundos).getTime()) / 60000);
+    const minLimpio = Math.max(0, diffMinutos);
+    return {
+      texto: `${minLimpio} min`,
+      alerta: minLimpio >= 15 // Si una orden pasa de 15 minutos, el temporizador se vuelve rojo
+    };
+  };
 
   return (
-    <div className={`px-3 py-1.5 rounded-lg border font-bold text-xs flex items-center gap-2 ${colorClass}`}>
-      <span className={`w-2 h-2 rounded-full ${dotClass} ${pulse ? 'animate-ping' : ''}`}></span>
-      {minutos} min
-    </div>
-  );
-};
+    <div className="flex-1 bg-[#070b16] p-8 overflow-x-auto select-none min-h-[calc(100vh-80px)] flex gap-6 items-start">
+      {(!pedidos || pedidos.length === 0) ? (
+        <div className="w-full h-96 border-2 border-dashed border-slate-800/80 rounded-3xl flex flex-col items-center justify-center text-slate-500 gap-3 shadow-inner">
+          <span className="text-6xl animate-bounce">🍳</span>
+          <h2 className="text-xl font-black tracking-wide text-slate-400 uppercase font-sans">Cocina al día e impecable</h2>
+          <p className="text-xs font-mono text-emerald-400/80 bg-emerald-950/30 px-4 py-1.5 rounded-full border border-emerald-800/30 font-bold">
+            No hay comandas pendientes de preparación
+          </p>
+        </div>
+      ) : (
+        pedidos.map((pedido) => {
+          const { texto: minStr, alerta: esDemora } = calcularTiempo(pedido.horaPedido);
 
-
-export default function Cocina({ pedidos, onCompletar }) {
-  if (pedidos.length === 0) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-6 opacity-50">
-        <svg className="w-24 h-24 text-slate-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
-        <h2 className="text-2xl font-black text-slate-400">Cocina Despejada</h2>
-        <p className="text-slate-500 font-medium">No hay comandas pendientes.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex-1 overflow-y-auto p-8 bg-[#020617] custom-scrollbar">
-      {/* Grid masivo para la pantalla de la cocina */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 items-start">
-        
-        {pedidos.sort((a, b) => a.horaPedido - b.horaPedido).map((pedido) => (
-          <div key={pedido.id} className="bg-slate-900 border border-slate-700 rounded-3xl overflow-hidden shadow-2xl flex flex-col">
-            
-            {/* Cabecera del Ticket */}
-            <div className="p-5 border-b border-slate-800 bg-slate-800/40 flex justify-between items-start">
+          return (
+            <div 
+              key={pedido.id || Math.random()} 
+              className={`min-w-[320px] max-w-sm bg-slate-900/80 border rounded-3xl p-6 flex flex-col justify-between shadow-2xl transition-all shrink-0 relative overflow-hidden ${
+                esDemora ? 'border-rose-500/80 shadow-rose-500/10' : 'border-slate-800'
+              }`}
+            >
+              {/* CABECERA DEL TICKET DE COCINA */}
               <div>
-                <span className="text-xs font-black text-slate-500 uppercase tracking-widest block mb-1">Mesa</span>
-                <span className="text-3xl font-black text-white leading-none">#{pedido.numMesa}</span>
-              </div>
-              <TimerPedido horaPedido={pedido.horaPedido} />
-            </div>
-
-            {/* Lista de Platillos (Letra gigante para lectura a distancia) */}
-            <div className="flex-1 p-5 space-y-4 bg-slate-900/50">
-              {pedido.platillos.map((p, index) => (
-                <div key={index} className="flex gap-4 items-center border-b border-slate-800/80 pb-3 last:border-0 last:pb-0">
-                  <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-indigo-400 font-black text-lg border border-slate-700 shrink-0">
-                    {p.cantidad}
+                <div className="flex justify-between items-start border-b border-slate-800/80 pb-4 mb-4">
+                  <div>
+                    <span className="text-[10px] font-black font-mono tracking-widest text-slate-400 block uppercase">Comanda en Curso</span>
+                    <h3 className="text-2xl font-black text-white tracking-tight mt-0.5">
+                      MESA #{pedido.numMesa}
+                    </h3>
                   </div>
-                  <span className="font-bold text-slate-200 text-lg leading-tight">
-                    {p.nombre}
+
+                  <span className={`text-xs font-black font-mono px-3 py-1 rounded-full border flex items-center gap-1.5 shadow-sm ${
+                    esDemora 
+                      ? 'bg-rose-500/20 border-rose-500/40 text-rose-300 animate-pulse font-extrabold' 
+                      : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${esDemora ? 'bg-rose-400' : 'bg-emerald-400'}`}></span>
+                    {minStr}
                   </span>
                 </div>
-              ))}
-            </div>
 
-            {/* Botón de Acción Táctil Gigante */}
-            <div className="p-4 bg-slate-950 border-t border-slate-800">
-              <button 
+                {/* LISTA DE PLATILLOS Y SUS NOTAS DE CLIENTE */}
+                <div className="space-y-3.5 my-2 overflow-y-auto max-h-[55vh] pr-1">
+                  {pedido.platillos?.map((item, idx) => {
+                    // Atrapa la nota sin importar si en base de datos se llamó comentario, nota o notas
+                    const notaLimpia = item.comentario || item.nota || item.notas || '';
+
+                    return (
+                      <div key={idx} className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-3.5 transition-all hover:border-slate-700 shadow-sm">
+                        
+                        {/* CANTIDAD Y NOMBRE DEL PLATILLO */}
+                        <div className="flex items-start gap-3">
+                          <span className="bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 text-xs font-black font-mono px-2.5 py-1 rounded-xl shrink-0 mt-0.5">
+                            {item.cantidad}x
+                          </span>
+                          <span className="text-white font-extrabold text-sm leading-snug pt-0.5">
+                            {item.nombre || item.platillo}
+                          </span>
+                        </div>
+
+                        {/* 👇 CAJÓN AMARILLO DE NOTAS (LA SOLUCIÓN A TU PROBLEMA) 👇 */}
+                        {notaLimpia.trim() !== '' && (
+                          <div className="mt-2.5 ml-9 px-3 py-2 bg-amber-500/15 border border-amber-500/30 rounded-xl text-amber-200 text-xs font-medium flex items-start gap-2 shadow-inner">
+                            <span className="text-amber-400 select-none text-sm leading-none mt-0.5">⚠️</span>
+                            <div className="leading-relaxed">
+                              <span className="text-[10px] font-black uppercase font-mono tracking-wider text-amber-400/90 block mb-0.5">Nota de Preparación:</span>
+                              {notaLimpia}
+                            </div>
+                          </div>
+                        )}
+
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* BOTÓN DE DESPACHO */}
+              <button
                 onClick={() => onCompletar(pedido.id)}
-                className="w-full py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-lg font-black tracking-wide uppercase transition-all shadow-[0_4px_20px_rgba(99,102,241,0.4)] cursor-pointer active:scale-95"
+                className="w-full mt-6 py-3.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-black text-xs uppercase tracking-widest rounded-2xl shadow-xl shadow-indigo-600/30 transition-all cursor-pointer flex items-center justify-center gap-2 border border-indigo-400/20"
               >
-                ¡Plato Listo!
+                <span>🚀</span>
+                <span>¡Plato Listo / Despachar!</span>
               </button>
+
             </div>
-
-          </div>
-        ))}
-
-      </div>
+          );
+        })
+      )}
     </div>
   );
 }

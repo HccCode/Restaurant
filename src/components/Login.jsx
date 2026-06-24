@@ -1,105 +1,146 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 export default function Login({ onLogin }) {
-  const [credenciales, setCredenciales] = useState({ usuario: '', password: '' });
-  const [error, setError] = useState('');
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState(null);
   const [cargando, setCargando] = useState(false);
 
-  // Reemplaza esto con la misma IP local que pusiste en App.jsx
-const LOGIN_URL = `http://${window.location.hostname}:3000/api/login`;
+  // REGLA FÍSICA: Bloquea el ingreso al llegar al 4to dígito
+  const handleNumClick = (num) => {
+    if (pin.length < 4) {
+      setError(null);
+      setPin(prev => prev + num);
+    }
+  };
 
-  // Lógica maestra de autenticación hacia PostgreSQL
-  const realizarAutenticacion = async (usuario, password) => {
+  const handleBorrar = () => {
+    setPin(prev => prev.slice(0, -1));
+    setError(null);
+  };
+
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault();
+    const pinLimpio = pin ? pin.trim() : '';
+
+    // REGLA LÓGICA: Prohibido enviar si no hay 4 dígitos exactos
+    if (pinLimpio.length !== 4) {
+      setError('El PIN consta de 4 dígitos numéricos');
+      return;
+    }
+
     setCargando(true);
-    setError('');
+    setError(null);
+
+    const hostAnfitrion = window.location.hostname || 'localhost';
+    const urlExacta = `http://${hostAnfitrion}:3000/api/login`;
 
     try {
-      const respuesta = await fetch(LOGIN_URL, {
+      const res = await fetch(urlExacta, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ usuario, password })
+        headers: { 
+          'Accept': 'application/json',
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({ pin: pinLimpio })
       });
 
-      if (respuesta.ok) {
-        const datosUsuario = await respuesta.json(); // Trae: { id, nombre, rol }
-        onLogin(datosUsuario);
+      const data = await res.json();
+
+      if (res.ok && data) {
+        onLogin(data);
       } else {
-        const errorData = await respuesta.json();
-        setError(errorData.error || 'Acceso denegado');
+        setError(data?.error || 'Acceso Denegado');
+        setPin('');
       }
     } catch (err) {
-      setError('Error conectando al servidor. Revisa tu conexión de red local.');
+      setError(`Sin respuesta del servidor (${hostAnfitrion}:3000)`);
     } finally {
       setCargando(false);
     }
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!credenciales.usuario || !credenciales.password) return;
-    realizarAutenticacion(credenciales.usuario.trim(), credenciales.password);
-  };
+  // SOPORTE DE TECLADO FÍSICO (Para que no tengas que usar el mouse en la PC)
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (/^[0-9]$/.test(event.key)) {
+        handleNumClick(event.key);
+      } else if (event.key === 'Backspace') {
+        handleBorrar();
+      } else if (event.key === 'Enter') {
+        handleSubmit();
+      }
+    };
 
-  // Los botones rápidos ahora hacen fetch a la base de datos real
-  const accesoRapido = (usuario, password) => {
-    realizarAutenticacion(usuario, password);
-  };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pin]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#020617] text-slate-200 font-sans p-4 overflow-hidden">
-      <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-purple-600/10 rounded-full blur-[120px] pointer-events-none"></div>
+    <div className="flex h-screen w-full bg-[#070b16] items-center justify-center select-none p-4 font-sans">
+      <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-8 max-w-sm w-full flex flex-col items-center shadow-2xl backdrop-blur-md">
+        
+        {/* LOGO */}
+        <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black text-2xl mb-3 shadow-lg shadow-indigo-600/30">
+          S
+        </div>
+        <h2 className="text-2xl font-black text-white tracking-tight">Sabor.io POS</h2>
+        <p className="text-xs text-slate-400 font-mono mb-6">Terminal de Salón</p>
 
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative backdrop-blur-xl z-10 animate-fade-in">
-        <div className="text-center mb-8">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-black text-2xl shadow-[0_0_25px_rgba(99,102,241,0.4)] mx-auto mb-3">S</div>
-          <h2 className="text-2xl font-black text-white tracking-tight">Sabor<span className="text-indigo-400">.io</span></h2>
-          <p className="text-xs text-slate-400 mt-1">Conexión Segura al Servidor Central</p>
+        {/* VISOR DEL PIN (Estilo cajero automático) */}
+        <div className="w-full bg-slate-950 border border-slate-800 rounded-2xl h-14 mb-2 flex items-center justify-center text-2xl tracking-[0.4em] font-mono font-black text-indigo-400 shadow-inner overflow-hidden px-4">
+          {pin ? '•'.repeat(pin.length) : <span className="text-sm tracking-widest text-slate-600 font-mono font-bold select-none opacity-50">••••</span>}
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {error && <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold rounded-xl text-center animate-fade-in">{error}</div>}
+        {error && (
+          <p className="text-rose-400 text-xs font-bold font-mono bg-rose-500/10 border border-rose-500/20 py-1.5 px-3 rounded-xl mb-4 text-center w-full animate-shake">
+            {error}
+          </p>
+        )}
+
+        {/* TECLADO NUMÉRICO POS */}
+        <div className="grid grid-cols-3 gap-3 w-full my-2">
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+            <button
+              key={num}
+              type="button"
+              onClick={() => handleNumClick(String(num))}
+              className="h-14 bg-slate-800/90 hover:bg-slate-700 active:scale-95 rounded-2xl font-black text-white text-xl transition-all shadow flex items-center justify-center cursor-pointer"
+            >
+              {num}
+            </button>
+          ))}
           
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Usuario</label>
-            <input 
-              type="text" required placeholder="Ej. hector" disabled={cargando}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3.5 text-white text-sm focus:outline-none focus:border-indigo-500 transition-all placeholder-slate-700 disabled:opacity-50" 
-              value={credenciales.usuario} 
-              onChange={(e) => setCredenciales({...credenciales, usuario: e.target.value})} 
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Contraseña</label>
-            <input 
-              type="password" required placeholder="••••••••" disabled={cargando}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3.5 text-white text-sm focus:outline-none focus:border-indigo-500 transition-all placeholder-slate-700 disabled:opacity-50" 
-              value={credenciales.password} 
-              onChange={(e) => setCredenciales({...credenciales, password: e.target.value})} 
-            />
-          </div>
-          
-          <button 
-            type="submit" disabled={cargando}
-            className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-bold shadow-[0_4px_14px_0_rgba(79,70,229,0.39)] transition-all mt-2 cursor-pointer disabled:bg-indigo-800 disabled:cursor-wait flex items-center justify-center gap-2"
+          <button
+            type="button"
+            onClick={handleBorrar}
+            className="h-14 bg-slate-950 hover:bg-rose-500/20 hover:text-rose-400 rounded-2xl font-bold text-slate-500 text-xs transition-all flex items-center justify-center cursor-pointer uppercase"
           >
-            {cargando ? (
-              <><span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></span> Autenticando...</>
-            ) : 'Iniciar Sesión'}
+            Borrar
           </button>
-        </form>
 
-        <div className="mt-8 border-t border-slate-800/80 pt-6">
-          <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider text-center mb-3">Autenticación Rápida (Test BD)</span>
-          <div className="grid grid-cols-2 gap-2 mb-2">
-            <button type="button" disabled={cargando} onClick={() => accesoRapido('hector', '1234')} className="p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-[11px] font-bold text-slate-300 hover:border-indigo-500 transition-colors cursor-pointer disabled:opacity-50"><span className="block font-black text-indigo-400">Hector</span> Gerente</button>
-            <button type="button" disabled={cargando} onClick={() => accesoRapido('ana', '1234')} className="p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-[11px] font-bold text-slate-300 hover:border-emerald-500 transition-colors cursor-pointer disabled:opacity-50"><span className="block font-black text-emerald-400">Ana</span> Hostess</button>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" disabled={cargando} onClick={() => accesoRapido('carlos', '1234')} className="p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-[11px] font-bold text-slate-300 hover:border-amber-500 transition-colors cursor-pointer disabled:opacity-50"><span className="block font-black text-amber-400">Carlos</span> Mesero</button>
-            <button type="button" disabled={cargando} onClick={() => accesoRapido('roberto', '1234')} className="p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-[11px] font-bold text-slate-300 hover:border-rose-500 transition-colors cursor-pointer disabled:opacity-50"><span className="block font-black text-rose-400">Roberto</span> Chef Ejecutivo</button>
-          </div>
+          <button
+            type="button"
+            onClick={() => handleNumClick('0')}
+            className="h-14 bg-slate-800/90 hover:bg-slate-700 active:scale-95 rounded-2xl font-black text-white text-xl transition-all shadow flex items-center justify-center cursor-pointer"
+          >
+            0
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={cargando}
+            className="h-14 bg-indigo-600 hover:bg-indigo-500 active:scale-95 rounded-2xl font-black text-white text-xs transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center cursor-pointer tracking-wider font-mono"
+          >
+            {cargando ? '...' : 'ENTRAR'}
+          </button>
         </div>
+
+        {/* FOOTER DE SEGURIDAD LIMPIO */}
+        <div className="mt-6 pt-4 border-t border-slate-800/80 w-full text-center">
+          <span className="text-[10px] text-slate-600 font-mono tracking-widest uppercase block">Terminal Protegida</span>
+        </div>
+
       </div>
     </div>
   );

@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 
 export default function ModalReserva({ isOpen, onClose, onSave, fechaInicial, reservaAEditar }) {
-  
+  // Calculamos la fecha actual en formato YYYY-MM-DD para el límite del calendario
+const fechaLocal = new Date();
+  const hoy = `${fechaLocal.getFullYear()}-${String(fechaLocal.getMonth() + 1).padStart(2, '0')}-${String(fechaLocal.getDate()).padStart(2, '0')}`;
+
   const [formData, setFormData] = useState({
     nombre: '',
-    telefono: '', // <-- NUEVA PROPIEDAD
-    fecha: '',
+    telefono: '', 
+    fecha: hoy,
     hora: '14:00',
     personas: 2,
     tipo: 'Estándar',
@@ -15,12 +18,17 @@ export default function ModalReserva({ isOpen, onClose, onSave, fechaInicial, re
   useEffect(() => {
     if (isOpen) {
       if (reservaAEditar) {
-        setFormData(reservaAEditar);
+        // Aseguramos que la fecha que viene de la base de datos se formatee correctamente para el input
+        setFormData({
+          ...reservaAEditar,
+          fecha: reservaAEditar.fecha ? reservaAEditar.fecha.split('T')[0] : hoy
+        });
       } else {
+        // Limpiamos el formulario y asignamos el día de hoy por defecto si no hay fecha inicial
         setFormData({
           nombre: '',
-          telefono: '', // <-- LIMPIEZA AL CREAR NUEVA
-          fecha: fechaInicial,
+          telefono: '', 
+          fecha: fechaInicial || hoy,
           hora: '14:00',
           personas: 2,
           tipo: 'Estándar',
@@ -28,7 +36,7 @@ export default function ModalReserva({ isOpen, onClose, onSave, fechaInicial, re
         });
       }
     }
-  }, [isOpen, fechaInicial, reservaAEditar]);
+  }, [isOpen, fechaInicial, reservaAEditar, hoy]);
 
   if (!isOpen) return null;
 
@@ -45,7 +53,7 @@ export default function ModalReserva({ isOpen, onClose, onSave, fechaInicial, re
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
       <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
         
         <div className="px-6 py-5 border-b border-slate-800 flex justify-between items-center bg-slate-800/40">
@@ -67,7 +75,7 @@ export default function ModalReserva({ isOpen, onClose, onSave, fechaInicial, re
             />
           </div>
 
-          {/* NUEVO CAMPO: Teléfono de Contacto */}
+          {/* Teléfono de Contacto */}
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Teléfono de Contacto</label>
             <input type="tel" placeholder="Ej. 6861234567" className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 transition-all placeholder-slate-700"
@@ -79,7 +87,8 @@ export default function ModalReserva({ isOpen, onClose, onSave, fechaInicial, re
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Fecha</label>
-              <input type="date" required className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 transition-all [color-scheme:dark]"
+              {/* min={hoy} permite reservas del mismo día */}
+              <input type="date" required min={hoy} className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-indigo-500 transition-all [color-scheme:dark]"
                 value={formData.fecha} onChange={(e) => setFormData({...formData, fecha: e.target.value})}
               />
             </div>

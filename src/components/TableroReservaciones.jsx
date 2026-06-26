@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function TableroReservaciones({ reservaciones, onMover, onEliminar, onEditar, usuario }) {
+export default function TableroReservaciones({ reservaciones, onNuevaReserva, onEditarReserva, onEliminarReserva, onAsignarMesa, onMover, usuario }) {
   const [mesasLayout, setMesasLayout] = useState([]);
   const BASE_URL = `http://${window.location.hostname}:3000/api`;
 
@@ -15,16 +15,16 @@ export default function TableroReservaciones({ reservaciones, onMover, onElimina
 
   // CATEGORÍAS KANBAN
   const columnas = [
-    { id: 'pendientes', titulo: 'Pendientes', color: 'border-blue-500/40 text-blue-400' },
-    { id: 'espera', titulo: 'Sala de Espera', color: 'border-amber-500/40 text-amber-400' },
-    { id: 'en-curso', titulo: 'En Curso', color: 'border-emerald-500/40 text-emerald-400' }
+    { id: 'pendientes', titulo: 'Pendientes', color: 'border-blue-500/40 text-blue-400', hex: 'bg-blue-500' },
+    { id: 'espera', titulo: 'Sala de Espera', color: 'border-amber-500/40 text-amber-400', hex: 'bg-amber-500' },
+    { id: 'en-curso', titulo: 'En Curso', color: 'border-emerald-500/40 text-emerald-400', hex: 'bg-emerald-500' }
   ];
 
-  // FILTRAR SAlA DE ESPERA (Hostess y Gerentes únicamente)
+  // FILTRAR SALA DE ESPERA (Hostess y Gerentes únicamente)
   const esPersonalAutorizado = usuario?.rol === 'Gerente' || usuario?.rol === 'Hostess';
   
   // Calcular métricas de la sala de espera
-  const clientesEsperando = reservaciones.filter(r => r.estado === 'espera');
+  const clientesEsperando = reservaciones.filter(r => r.estado === 'espera' || r.estado === 'sala-espera');
   const totalPersonasEspera = clientesEsperando.reduce((acc, curr) => acc + (parseInt(curr.personas) || 0), 0);
 
   // Mapear cuáles números de mesa están ocupados hoy y quién los tiene
@@ -43,7 +43,22 @@ export default function TableroReservaciones({ reservaciones, onMover, onElimina
           ========================================================================= */}
       <div className="flex-1 flex flex-col gap-4 overflow-hidden">
         
-        {/* INDICADOR PRIVADO SAlA DE ESPERA */}
+        {/* ENCABEZADO MAESTRO CON EL BOTÓN DE AGREGAR */}
+        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shrink-0 border-b border-slate-800/80 pb-4">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">Flujo del Salón (Kanban)</h1>
+            <p className="text-xs text-slate-400 mt-1">Controla el ciclo de vida del comensal y asigna mesas en vivo.</p>
+          </div>
+          
+          <button
+            onClick={onNuevaReserva}
+            className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+          >
+            <span>➕ Nueva Reservación</span>
+          </button>
+        </header>
+
+        {/* INDICADOR PRIVADO SALA DE ESPERA */}
         {esPersonalAutorizado && (
           <div className="w-full bg-gradient-to-r from-amber-500/10 to-transparent border border-amber-500/20 rounded-2xl p-4 flex items-center justify-between animate-fade-in shrink-0">
             <div className="flex items-center gap-3">
@@ -71,32 +86,32 @@ export default function TableroReservaciones({ reservaciones, onMover, onElimina
           {columnas.map(col => {
             const lista = reservaciones.filter(r => r.estado === col.id);
             return (
-              <div key={col.id} className="bg-slate-900/30 border border-slate-900 rounded-2xl p-4 flex flex-col h-[500px] md:h-full">
-                <div className={`border-b pb-2 mb-3 font-black text-xs uppercase tracking-widest flex justify-between items-center ${col.color}`}>
-                  <span>{col.titulo}</span>
-                  <span className="bg-slate-950 px-2 py-0.5 rounded font-mono text-[10px]">{lista.length}</span>
+              <div key={col.id} className="bg-[#0b1120]/40 border border-slate-800/60 rounded-2xl p-4 flex flex-col h-[500px] md:h-full">
+                
+                <div className="flex justify-between items-center mb-4 pb-2 border-b border-slate-800/80 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${col.hex}`}></span>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">{col.titulo}</h3>
+                    <span className="bg-slate-800 text-slate-300 text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">{lista.length}</span>
+                  </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-                  {lista.map(r => (
-                    <div key={r.id} className="bg-slate-950/90 border border-slate-800/80 p-3.5 rounded-xl space-y-2 relative group hover:border-slate-700 transition-colors">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="text-xs font-black text-white leading-tight">{r.nombre}</h4>
-                          <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 bg-slate-900 text-slate-400 rounded border border-slate-800 mt-1 inline-block">{r.hora} • {r.personas} pax</span>
-                        </div>
-                        {r.numMesa && <span className="bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 font-mono font-black px-2 py-0.5 rounded text-[10px] uppercase">Mesa: {r.numMesa}</span>}
-                      </div>
-
-                      <div className="pt-2 border-t border-slate-900 flex justify-end gap-2 text-[10px] font-bold">
-                        {col.id === 'pendientes' && <button onClick={() => onMover(r.id, 'espera')} className="text-amber-400 bg-amber-500/5 px-2 py-1 rounded hover:bg-amber-500/10 cursor-pointer">⏳ A Espera</button>}
-                        {col.id !== 'en-curso' && <button onClick={() => onMover(r.id, 'en-curso')} className="text-emerald-400 bg-emerald-500/5 px-2 py-1 rounded hover:bg-emerald-500/10 cursor-pointer">🚀 Sentar</button>}
-                        {col.id === 'en-curso' && <button onClick={() => onMover(r.id, 'finalizadas')} className="text-slate-400 bg-slate-800 px-2 py-1 rounded hover:bg-slate-700 cursor-pointer">🏁 Cobrar</button>}
-                        <button onClick={() => onEliminar(r.id)} className="text-rose-500 opacity-20 group-hover:opacity-100 p-1 cursor-pointer">🗑️</button>
-                      </div>
-                    </div>
-                  ))}
-                  {lista.length === 0 && <div className="text-center text-[11px] text-slate-600 font-serif italic py-10">Bandeja vacía</div>}
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-none">
+                  {lista.length === 0 ? (
+                    <div className="p-6 text-center text-slate-600 italic text-[11px] border border-dashed border-slate-800/80 rounded-xl font-serif mt-2">Bandeja vacía</div>
+                  ) : (
+                    lista.map(r => (
+                      <TarjetaReserva 
+                        key={r.id} 
+                        r={r} 
+                        colId={col.id}
+                        onEditarReserva={onEditarReserva} 
+                        onEliminarReserva={onEliminarReserva} 
+                        onAsignarMesa={onAsignarMesa} 
+                        onMover={onMover} 
+                      />
+                    ))
+                  )}
                 </div>
               </div>
             );
@@ -105,17 +120,17 @@ export default function TableroReservaciones({ reservaciones, onMover, onElimina
       </div>
 
       {/* =========================================================================
-          👇 COLUMNA DERECHA: EL MONITOR MAPA DE OCUPACIÓN EN VIVO 👇
+          COLUMNA DERECHA: EL MONITOR MAPA DE OCUPACIÓN EN VIVO
           ========================================================================= */}
-      <div className="w-full xl:w-80 bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 flex flex-col h-fit xl:h-full shrink-0">
+      <div className="w-full xl:w-80 bg-[#0a0f1d] border border-slate-800/80 rounded-2xl p-4 flex flex-col h-fit xl:h-full shrink-0">
         <div className="border-b border-slate-800 pb-2 mb-4 flex justify-between items-center">
           <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Ocupación en Tiempo Real</h3>
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-          {/* AGRUPADOR POR ZONAS (Terraza, VIP, Barra, etc.) */}
-          {['General', 'Terraza', 'VIP', 'Barra'].map(zona => {
+        <div className="flex-1 overflow-y-auto space-y-5 pr-1 scrollbar-thin scrollbar-thumb-slate-800 pb-20">
+          {/* AGRUPADOR POR ZONAS */}
+          {['General', 'Terraza', 'VIP', 'Barra', 'Salón Segundo Piso'].map(zona => {
             const mesasDeLaZona = mesasLayout.filter(m => m.zona === zona);
             if (mesasDeLaZona.length === 0) return null;
 
@@ -133,16 +148,12 @@ export default function TableroReservaciones({ reservaciones, onMover, onElimina
                         title={estaOcupada ? `Ocupada por: ${clienteOcupando}` : 'Disponible'}
                         className={`p-2.5 rounded-xl border flex flex-col items-center justify-center text-center font-mono transition-all relative ${
                           estaOcupada
-                            ? 'bg-rose-500/10 border-rose-500/20 text-rose-400 shadow-md shadow-rose-900/5' // <-- Rojo claro si está ocupada
-                            : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' // <-- Verde brillante si está disponible
+                            ? 'bg-rose-500/10 border-rose-500/20 text-rose-400 shadow-md shadow-rose-900/5' 
+                            : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
                         }`}
                       >
                         <span className="text-xs font-black block tracking-wider">{mesa.numero}</span>
-                        
-                        {/* MINI METRICA DE CAPACIDAD */}
                         <span className="text-[9px] font-sans font-medium mt-0.5 opacity-40">👥 {mesa.capacidad}</span>
-
-                        {/* SUBTEXTO DEL CLIENTE OCUPANDO */}
                         {estaOcupada && (
                           <span className="text-[8px] font-sans font-bold block truncate w-full mt-1 px-0.5 bg-rose-500/10 rounded text-rose-300">
                             {clienteOcupando.split(' ')[0]}
@@ -155,9 +166,94 @@ export default function TableroReservaciones({ reservaciones, onMover, onElimina
               </div>
             );
           })}
+          {mesasLayout.length === 0 && (
+            <p className="text-xs text-slate-500 text-center italic mt-10">Aún no has configurado tus mesas. Ve a Control de Mesas.</p>
+          )}
         </div>
       </div>
 
+    </div>
+  );
+}
+
+// Subcomponente interno para las tarjetas del Kanban
+function TarjetaReserva({ r, colId, onEditarReserva, onEliminarReserva, onAsignarMesa, onMover }) {
+  return (
+    <div className="bg-[#0b1120] border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition-all flex flex-col gap-3 group relative">
+      
+      {/* Fila superior: Hora y Comensales */}
+      <div className="flex justify-between items-center">
+        <span className="bg-slate-950 px-2 py-0.5 rounded font-mono font-bold text-indigo-400 text-[10px]">
+          ⏰ {r.hora}
+        </span>
+        <span className="text-slate-400 text-[11px] font-bold">
+          👥 {r.personas} pax
+        </span>
+      </div>
+
+      {/* Info Principal */}
+      <div>
+        <h4 className="text-xs font-black text-white leading-tight truncate">{r.nombre}</h4>
+        {r.telefono && <p className="text-[10px] text-slate-500 font-mono mt-0.5">{r.telefono}</p>}
+      </div>
+
+      {/* Badges especiales (Zona / Mesa asignada) */}
+      <div className="flex flex-wrap gap-1.5 items-center mt-1">
+        <span className="bg-slate-900 border border-slate-800 text-slate-400 text-[9px] px-1.5 py-0.5 rounded font-semibold">
+          📍 {r.tipo}
+        </span>
+        
+        {r.numMesa ? (
+          <span className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[9px] px-1.5 py-0.5 rounded font-black uppercase font-mono">
+            🪑 Mesa {r.numMesa}
+          </span>
+        ) : colId === 'en-curso' ? (
+          <button onClick={() => onAsignarMesa(r)} className="bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[9px] px-1.5 py-0.5 rounded font-black uppercase cursor-pointer animate-pulse">
+            ⚠️ Asignar Mesa
+          </button>
+        ) : null}
+        
+        {r.etiqueta && (
+          <span className="bg-pink-500/10 border border-pink-500/20 text-pink-400 text-[9px] px-1.5 py-0.5 rounded font-bold">
+            ✨ {r.etiqueta}
+          </span>
+        )}
+      </div>
+
+      {/* Acciones y Flechas de Desplazamiento */}
+      <div className="flex justify-between items-center pt-2.5 border-t border-slate-800/60 mt-1">
+        
+        {/* Modificadores de la cuenta */}
+        <div className="flex gap-2 text-slate-500">
+          <button onClick={() => onEditarReserva(r)} className="hover:text-white transition-colors cursor-pointer text-xs" title="Editar datos">✏️</button>
+          <button onClick={() => onEliminarReserva(r.id)} className="hover:text-rose-400 transition-colors cursor-pointer text-xs" title="Eliminar">🗑️</button>
+          {!r.numMesa && colId !== 'en-curso' && (
+            <button onClick={() => onAsignarMesa(r)} className="hover:text-emerald-400 transition-colors cursor-pointer text-xs" title="Vincular mesa libre">🪑</button>
+          )}
+        </div>
+
+        {/* Flechas de movimiento de columnas */}
+        <div className="flex gap-1.5">
+          {colId === 'espera' && (
+            <button onClick={() => onMover(r.id, 'pendientes', r.numMesa)} className="w-6 h-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded flex items-center justify-center font-bold text-[10px] text-slate-400 hover:text-white cursor-pointer transition-colors" title="Regresar a Pendientes">◀</button>
+          )}
+          {colId === 'en-curso' && (
+            <button onClick={() => onMover(r.id, 'espera', r.numMesa)} className="w-6 h-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded flex items-center justify-center font-bold text-[10px] text-slate-400 hover:text-white cursor-pointer transition-colors" title="Regresar a Sala de Espera">◀</button>
+          )}
+
+          {colId === 'pendientes' && (
+            <button onClick={() => onMover(r.id, 'espera', r.numMesa)} className="text-[9px] px-2 py-1 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 rounded font-bold uppercase cursor-pointer transition-colors flex gap-1">A Espera ▶</button>
+          )}
+          {colId === 'espera' && (
+            <button onClick={() => onMover(r.id, 'en-curso', r.numMesa)} className="text-[9px] px-2 py-1 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 rounded font-bold uppercase cursor-pointer transition-colors flex gap-1">Sentar ▶</button>
+          )}
+          
+          {colId === 'en-curso' && (
+            <span className="text-slate-500 bg-slate-900 px-2 py-1 rounded select-none uppercase tracking-wider text-[8px] flex items-center">En Salón</span>
+          )}
+        </div>
+
+      </div>
     </div>
   );
 }

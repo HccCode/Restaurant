@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
 
-// Componentes
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import TableroReservaciones from './components/TableroReservaciones';
@@ -14,20 +13,11 @@ import Cocina from './components/Cocina';
 import ModalCorteZ from './components/ModalCorteZ';
 import Inventario from './components/Inventario';
 import GestionUsuarios from './components/GestionUsuarios';
-import HistorialCortes from './components/HistorialCortes';
 import ConfigRestaurante from './components/ConfigRestaurante';
 import GestionMenu from './components/GestionMenu';
 import ControlMesas from './components/ControlMesas';
 
 const socket = io(`http://${window.location.hostname}:3000`);
-
-const VistaEnConstruccion = ({ titulo, icono }) => (
-  <div className="h-full w-full flex flex-col items-center justify-center text-slate-500 select-none p-6">
-    <span className="text-6xl mb-4 animate-bounce">{icono}</span>
-    <h2 className="text-2xl font-black tracking-wide text-slate-300">{titulo}</h2>
-    <p className="text-xs mt-2 text-indigo-400 font-mono bg-indigo-950/40 px-3 py-1 rounded-full border border-indigo-800/30">Módulo en desarrollo</p>
-  </div>
-);
 
 export default function App() {
   const [usuario, setUsuario] = useState(null); 
@@ -39,56 +29,38 @@ export default function App() {
   const [socketConectado, setSocketConectado] = useState(false);
   const [alertaSistema, setAlertaSistema] = useState(null);
 
-  // =========================================================================
-  // ⚡ BLINDAJE ABSOLUTO DE FECHAS (Corte de texto sin conversión de horas)
-  // =========================================================================
-  const formatearAFechaLocal = (input) => {
-    if (!input) return '';
-    
-    // CASO 1: Viene de PostgreSQL ("2026-06-23T00:00:00.000Z")
-    // Lo cortamos por la T y extraemos los 10 dígitos. Ignoramos a Londres y a Mexicali.
-    if (typeof input === 'string') {
-      return input.split('T')[0].substring(0, 10);
-    }
-    
-    // CASO 2: Es el objeto local del navegador (new Date() del día de hoy)
-    if (input instanceof Date) {
-      const yyyy = input.getFullYear();
-      const mm = String(input.getMonth() + 1).padStart(2, '0');
-      const dd = String(input.getDate()).padStart(2, '0');
-      return `${yyyy}-${mm}-${dd}`;
-    }
-
-    // Caso de respaldo
-    return String(input).split('T')[0].substring(0, 10);
-  };
-
-  // Esta variable siempre tendrá "2026-06-23" (o el día que sea hoy localmente)
-  const hoy = formatearAFechaLocal(new Date());
-  
+  const hoy = new Date().toISOString().split('T')[0];
   const [fechaParaModal, setFechaParaModal] = useState(hoy);
+  
   const [menuGlobal, setMenuGlobal] = useState([]); 
+  const [mesasGlobal, setMesasGlobal] = useState([]); 
   const [comandas, setComandas] = useState({});
   const [pedidosCocina, setPedidosCocina] = useState([]);
   const [notificacionesCocina, setNotificacionesCocina] = useState([]);
-  const [reservaciones, setReservaciones] = useState([]);
+  const [reservacionesRaw, setReservacionesRaw] = useState([]);
+  
+  const [configEmpresa, setConfigEmpresa] = useState({ iva: 16 });
 
   const BASE_URL = `http://${window.location.hostname}:3000/api`;
 
   const sincronizarTodoElSalon = async () => {
     try {
-      const [resRes, resCom, resCoc, resMen] = await Promise.all([
-        fetch(`${BASE_URL}/reservaciones`),
-        fetch(`${BASE_URL}/comandas`),
-        fetch(`${BASE_URL}/cocina`),
-        fetch(`${BASE_URL}/menu`)
+      const [resRes, resCom, resCoc, resMen, resMes, resConf] = await Promise.all([
+        fetch(`${BASE_URL}/reservaciones`), 
+        fetch(`${BASE_URL}/comandas`), 
+        fetch(`${BASE_URL}/cocina`), 
+        fetch(`${BASE_URL}/menu`),
+        fetch(`${BASE_URL}/mesas`),
+        fetch(`${BASE_URL}/configuracion`)
       ]);
-
-      if (resRes.ok) setReservaciones(await resRes.json());
+      
+      if (resRes.ok) setReservacionesRaw(await resRes.json());
       if (resCom.ok) setComandas(await resCom.json());
       if (resCoc.ok) setPedidosCocina(await resCoc.json());
       if (resMen.ok) setMenuGlobal(await resMen.json());
-    } catch (error) { console.error('Error de red:', error); }
+      if (resMes.ok) setMesasGlobal(await resMes.json());
+      if (resConf.ok) setConfigEmpresa(await resConf.json());
+    } catch (e) { console.error('Error de red:', e); }
   };
 
   useEffect(() => {
@@ -96,191 +68,188 @@ export default function App() {
     socket.on('connect', () => setSocketConectado(true));
     socket.on('disconnect', () => setSocketConectado(false));
     socket.on('salon_actualizado', () => sincronizarTodoElSalon());
-    socket.on('plato_despachado_kds', (nuevaOrden) => setNotificacionesCocina(prev => [nuevaOrden, ...prev]));
-
-    return () => {
-      socket.off('connect'); socket.off('disconnect'); 
-      socket.off('salon_actualizado'); socket.off('plato_despachado_kds');
-    };
+    socket.on('plato_despachado_kds', p => setNotificacionesCocina(prev => [p, ...prev]));
+    return () => socket.off();
   }, []);
 
-  const handleActualizarItemsComanda = (nuevoEstadoOFuncion) => {
-    const baseComandas = typeof nuevoEstadoOFuncion === 'function' ? nuevoEstadoOFuncion(comandas) : nuevoEstadoOFuncion;
-    const nuevasLimpia = {};
-    
-    Object.keys(baseComandas).forEach(resId => {
-      nuevasLimpia[resId] = (baseComandas[resId] || []).map(p => ({
-        ...p, enviado: p.cantidad < (p.enviado || 0) ? p.cantidad : (p.enviado || 0)
-      }));
-    });
-
-    setComandas(nuevasLimpia);
-    Object.keys(nuevasLimpia).forEach(resId => {
-      if (JSON.stringify(comandas[resId] || []) !== JSON.stringify(nuevasLimpia[resId] || [])) {
-        fetch(`${BASE_URL}/comandas/${resId}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platillos: nuevasLimpia[resId] })
-        }).catch(err => console.error(err));
-      }
-    });
+  const limpiarFecha = (str) => {
+    if (!str) return '';
+    const match = String(str).match(/(\d{4})[-/]?(\d{1,2})[-/]?(\d{1,2})/);
+    if (match) return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+    return String(str).split('T')[0].trim();
   };
 
-  const mesasOcupadasActualmente = reservaciones
+  const limpiarEstado = (est) => {
+    let e = String(est || 'pendientes').toLowerCase().trim();
+    if (e === 'pendiente' || e === 'nuevas' || e === 'nueva') e = 'pendientes';
+    if (e === 'en curso') e = 'en-curso';
+    return e;
+  };
+
+  const reservacionesLimpias = reservacionesRaw.map(r => ({
+    ...r, fechaNorm: limpiarFecha(r.fecha), estado: limpiarEstado(r.estado)
+  }));
+
+  const reservasDeHoy = reservacionesLimpias.filter(r => r.fechaNorm === hoy);
+
+  const mesasOcupadasActualmente = reservacionesLimpias
     .filter(r => r.estado === 'en-curso' && r.numMesa)
     .map(r => ({ num: String(r.numMesa).trim(), nombre: r.nombre }));
 
-  const handleLogin = (u) => {
-    setUsuario(u);
-    if (u.rol === 'Mesero') setVistaActiva('pos');
-    else if (u.rol === 'Hostess') setVistaActiva('tablero');
-    else if (u.rol === 'Cocinero') setVistaActiva('cocina');
-    else setVistaActiva('dashboard'); 
+
+  // =========================================================================
+  // 🔥 ENRUTADOR INTELIGENTE DE VISTA INICIAL POR ROL 🔥
+  // =========================================================================
+  const obtenerVistaInicial = (rolUsuario) => {
+    const rol = String(rolUsuario || '').toLowerCase().trim();
+
+    if (rol.includes('cocin'))   return 'cocina';       // Cocinero / Chef -> Cocina
+    if (rol.includes('host'))    return 'tablero';      // Hostess -> Mapa de Reservas
+    if (rol.includes('meser'))   return 'pos';          // Mesero -> Punto de Venta
+    if (rol.includes('cajer'))   return 'pos';          // Cajero -> Punto de Venta
+    if (rol.includes('almacen')) return 'inventario';   // Almacenista -> Bodega
+
+    return 'dashboard'; // Gerente, Dueño o Admin -> Finanzas
   };
 
-  const abrirModalParaFecha = (f = hoy) => { setReservaEditando(null); setFechaParaModal(f); setIsModalOpen(true); };
-  const abrirModalParaEditar = (r) => { setReservaEditando(r); setIsModalOpen(true); };
-
-  const handleGuardarReserva = async (datosNuevos) => {
-    if (reservaEditando) {
-      try {
-        const res = await fetch(`${BASE_URL}/reservaciones/${reservaEditando.id}`, {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datosNuevos)
-        });
-        if (res.ok) {
-          const reservaActualizada = await res.json();
-          setReservaciones(reservaciones.map(r => r.id === reservaEditando.id ? reservaActualizada : r));
-        }
-      } catch (e) { console.error(e); }
-    } else {
-      const colores = ['from-blue-400 to-indigo-500', 'from-emerald-400 to-teal-500', 'from-rose-400 to-orange-400', 'from-pink-500 to-rose-500'];
-      const payload = { ...datosNuevos, color: colores[Math.floor(Math.random() * colores.length)] };
-      
-      try {
-        const res = await fetch(`${BASE_URL}/reservaciones`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-        });
-        if (res.ok) {
-          const nuevaReserva = await res.json(); 
-          setReservaciones(prev => [nuevaReserva, ...prev]); 
-        } else {
-          const errorData = await res.json();
-          alert(`Error DB:\n${errorData.error}`);
-        }
-      } catch (e) { alert(`Fallo de red: ${e.message}`); }
-    }
-    setIsModalOpen(false); setReservaEditando(null);
+  const handleLogin = (u) => { 
+    setUsuario(u); 
+    setVistaActiva(obtenerVistaInicial(u.rol)); 
   };
+  // =========================================================================
 
-  const handleMoverReserva = async (id, nuevoEstado, numMesaForzado = null) => {
-    if (nuevoEstado === 'en-curso' && !numMesaForzado) {
-      setReservaParaAsignarMesa(reservaciones.find(r => r.id === id)); return; 
-    }
-    try {
-      const res = await fetch(`${BASE_URL}/reservaciones/${id}/estado`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ estado: nuevoEstado, numMesa: numMesaForzado })
+
+  const handleActualizarComandas = (nuevoEstado) => {
+    setComandas(prev => {
+      const nuevoObjeto = typeof nuevoEstado === 'function' ? nuevoEstado(prev) : nuevoEstado;
+      Object.keys(nuevoObjeto).forEach(resId => {
+        fetch(`${BASE_URL}/comandas/${resId}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platillos: nuevoObjeto[resId] || [] })
+        }).catch(e => console.error(e));
       });
-      if (res.ok) {
-        const reservaModificada = await res.json();
-        setReservaciones(reservaciones.map(r => r.id === id ? reservaModificada : r));
-      }
-    } catch (e) { console.error(e); }
+      return nuevoObjeto;
+    });
   };
-
-  const handleConfirmarAsignacionMesa = (num) => {
-    if (reservaParaAsignarMesa) {
-      handleMoverReserva(reservaParaAsignarMesa.id, 'en-curso', num);
-      setReservaParaAsignarMesa(null); 
-    }
-  };
-
-  const handleEliminarReserva = async (id) => {
-    try {
-      const res = await fetch(`${BASE_URL}/reservaciones/${id}`, { method: 'DELETE' });
-      if (res.ok) setReservaciones(reservaciones.filter(r => r.id !== id));
-    } catch (e) { console.error(e); }
-  };
-
-  const handleCobrarMesa = (id) => { handleMoverReserva(id, 'finalizadas'); handleActualizarItemsComanda(id, []); };
 
   const handleMandarCocina = async (mesaObj, platillosEnCuenta) => {
-    const items = platillosEnCuenta.filter(p => !p.whitespace && p.cantidad > (p.enviado || 0)).map(p => ({
+    const items = platillosEnCuenta.filter(p => p.cantidad > (p.enviado || 0)).map(p => ({
       nombre: p.nombre, cantidad: p.cantidad - (p.enviado || 0), comentario: p.comentario || ''
     }));
-
-    if (items.length === 0) return setAlertaSistema({ titulo: 'Aviso', mensaje: 'Comanda mandada previamente.', icono: '⚠️', color: 'text-amber-500' });
-    
+    if (items.length === 0) return setAlertaSistema({ titulo: 'Aviso', mensaje: 'No hay platillos nuevos por marchar.', icono: '⚠️', color: 'text-amber-500' });
     try {
       const res = await fetch(`${BASE_URL}/cocina`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ numMesa: mesaObj.numMesa, platillos: items })
       });
       if (res.ok) {
-        const nuevoPedidoKDS = await res.json();
-        setPedidosCocina(prev => [...prev, nuevoPedidoKDS]);
-        handleActualizarItemsComanda(prev => ({ ...prev, [mesaObj.id]: platillosEnCuenta.map(p => ({ ...p, enviado: p.cantidad })) }));
-        setAlertaSistema({ titulo: '¡Enviada!', mensaje: 'Marchando a cocina.', icono: '🔥', color: 'text-orange-500' });
+        const nuevosPlatillos = platillosEnCuenta.map(p => ({ ...p, enviado: p.cantidad }));
+        handleActualizarComandas(prev => ({ ...prev, [mesaObj.id]: nuevosPlatillos }));
+        setAlertaSistema({ titulo: '¡Enviada!', mensaje: 'Orden marchada a cocina.', icono: '🔥', color: 'text-orange-500' });
       }
     } catch (e) { console.error(e); }
   };
 
-  const handleCompletarPedidoCocina = async (id) => { try { await fetch(`${BASE_URL}/cocina/${id}/completar`, { method: 'PUT' }); } catch (e) {} };
-  const handleDespacharPlatoSalón = (id) => setNotificacionesCocina(notificacionesCocina.filter(n => n.id !== id));
+  const handleCompletarPedidoCocina = async (id) => {
+    try { await fetch(`${BASE_URL}/cocina/${id}/completar`, { method: 'PUT' }); } catch (e) {}
+  };
+
+  const handleDespacharPlatoSalon = (idNotificacion) => {
+    setNotificacionesCocina(prev => prev.filter(n => n.id !== idNotificacion));
+  };
 
   const handleCalcularCorteZ = async () => {
-    try { const res = await fetch(`${BASE_URL}/cortes/preview`); if (res.ok) setDatosCorteZ(await res.json()); } catch (e) {}
+    try {
+      const res = await fetch(`${BASE_URL}/cortes/preview`);
+      if (res.ok) setDatosCorteZ(await res.json());
+    } catch (e) { alert(e.message); }
   };
 
   const handleConfirmarCierre = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/cortes`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuarioCierre: usuario.nombre, datosCorte: datosCorteZ })
+      const res = await fetch(`${BASE_URL}/cortes`, { 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ usuarioCierre: usuario?.nombre || 'Admin', datosCorte: datosCorteZ }) 
       });
-      if (res.ok) {
-        setComandas({}); setPedidosCocina([]); setNotificacionesCocina([]); setDatosCorteZ(null);
-        setAlertaSistema({ titulo: 'Turno Cerrado', mensaje: 'Reporte guardado en SQL exitosamente.', icono: '💰', color: 'text-emerald-400' });
+      if (res.ok) { 
+        setComandas({}); setPedidosCocina([]); setNotificacionesCocina([]); setDatosCorteZ(null); 
+        setAlertaSistema({ titulo: 'Turno Sellado', mensaje: 'El Corte Z se guardó. Ve a la pestaña "Cortes Z (PDF)" para descargarlo.', icono: '🏛️', color: 'text-indigo-400' }); 
       }
-    } catch (e) {}
+    } catch (e) { alert(e); }
   };
 
-  // 1. OBTENEMOS LAS RESERVAS DEL DÍA (El bug vivía aquí)
-  const reservasDeHoy = reservaciones.filter(r => formatearAFechaLocal(r.fecha) === hoy);
+  const handleGuardarReserva = async (datosReserva) => {
+    const esEdicion = !!reservaEditando;
+    const url = esEdicion ? `${BASE_URL}/reservaciones/${reservaEditando.id}` : `${BASE_URL}/reservaciones`;
+    try {
+      const res = await fetch(url, { method: esEdicion ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datosReserva) });
+      if (res.ok) { sincronizarTodoElSalon(); setIsModalOpen(false); setReservaEditando(null); }
+    } catch (e) { alert('Error al guardar reserva: ' + e.message); }
+  };
+
+  const handleConfirmarAsignacionMesa = async (idReserva, numMesa) => {
+    try {
+      const res = await fetch(`${BASE_URL}/reservaciones/${idReserva}/estado`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ estado: 'en-curso', numMesa }) });
+      if (res.ok) { sincronizarTodoElSalon(); setReservaParaAsignarMesa(null); }
+    } catch (e) { alert(e.message); }
+  };
+
+  const handleMoverReserva = async (id, nuevoEstado, numMesaForzado = null) => {
+    if (nuevoEstado === 'en-curso' && !numMesaForzado) { setReservaParaAsignarMesa(reservacionesLimpias.find(r => r.id === id)); return; }
+    try {
+      const res = await fetch(`${BASE_URL}/reservaciones/${id}/estado`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ estado: nuevoEstado, numMesa: numMesaForzado }) });
+      if (res.ok) { sincronizarTodoElSalon(); }
+    } catch (e) { console.error('Error al mover reserva:', e); }
+  };
+
+  const handleEliminarReserva = async (id) => {
+    if (!window.confirm('¿Estás seguro de eliminar este registro?')) return;
+    try { await fetch(`${BASE_URL}/reservaciones/${id}`, { method: 'DELETE' }); sincronizarTodoElSalon(); } catch (e) { console.error(e); }
+  };
 
   if (!usuario) return <Login onLogin={handleLogin} />;
 
   const renderizarVista = () => {
     switch (vistaActiva) {
-      case "pos": return <PuntoDeVenta menu={menuGlobal} reservaciones={reservasDeHoy} comandas={comandas} setComandas={handleActualizarItemsComanda} onCobrar={handleCobrarMesa} onEnviarCocina={handleMandarCocina} notificacionesCocina={notificacionesCocina} onDespacharPlato={handleDespacharPlatoSalón} />;
-      case "dashboard": return <Dashboard reservaciones={reservasDeHoy} onIniciarCorteZ={handleCalcularCorteZ} />;
-      case "historial_cortes": return <HistorialCortes />;
-      case "config_negocio": return <ConfigRestaurante />;
-      case "menu_edit": return <GestionMenu />;
-      case "calendario": return <><header className="h-20 border-b border-slate-800/50 flex items-center px-8 shrink-0"><h1 className="text-2xl font-extrabold text-white">Calendario</h1></header><Calendario reservaciones={reservaciones} onAbrirModal={abrirModalParaFecha} onEditar={abrirModalParaEditar} onEliminar={handleEliminarReserva} /></>;
-      case "tablero": {
-        // 2. CALCULAMOS LAS FUTURAS TAMBIÉN (Cero conflictos horarios)
-        const futuras = reservaciones.filter(r => formatearAFechaLocal(r.fecha) > hoy && r.estado !== 'finalizadas').length;
-        return (
-          <>
-            <header className="h-20 border-b border-slate-800/50 flex items-center justify-between px-8 shrink-0 bg-[#0a0f1d]/40 backdrop-blur-md">
-              <div className="flex items-center gap-3"><h1 className="text-2xl font-extrabold text-white">Salón</h1><span className="bg-emerald-500/10 text-emerald-400 text-xs px-3 py-1 rounded-full font-mono font-bold">{hoy}</span></div>
-              <div className="flex items-center gap-3">
-                {futuras > 0 && <button onClick={() => setVistaActiva('calendario')} className="bg-slate-800 text-slate-200 text-xs px-3 py-2 rounded-xl font-bold">📅 {futuras} reserva(s) futuras</button>}
-                <button onClick={() => abrirModalParaFecha(hoy)} className="bg-indigo-600 hover:bg-indigo-500 px-5 py-2 rounded-xl text-sm font-bold text-white">+ Reserva</button>
-              </div>
-            </header>
-            <TableroReservaciones reservaciones={reservasDeHoy} onMover={handleMoverReserva} onEliminar={handleEliminarReserva} onEditar={abrirModalParaEditar} usuario={usuario} />
-          </>
-        );
-      }
-      case "cocina": return <><header className="h-20 border-b border-rose-900/50 flex items-center justify-between px-8 bg-slate-950"><h1 className="text-2xl font-extrabold text-white">KDS • Cocina</h1><div className="text-sm font-bold text-slate-400 bg-slate-900 px-4 py-2 rounded-xl border border-slate-800">{pedidosCocina.length} Pendientes</div></header><Cocina pedidos={pedidosCocina} onCompletar={handleCompletarPedidoCocina} /></>;
+      case "dashboard": 
+        return <Dashboard reservaciones={reservasDeHoy} onIniciarCorteZ={handleCalcularCorteZ} />;
+      
+      case "pos": 
+        return <PuntoDeVenta 
+                 menu={menuGlobal} 
+                 reservaciones={reservasDeHoy.filter(r=>r.estado==='en-curso')} 
+                 comandas={comandas} 
+                 setComandas={handleActualizarComandas} 
+                 usuario={usuario} 
+                 
+                 onCobrar={async (idReservaPagada) => {
+                   try {
+                     await fetch(`${BASE_URL}/reservaciones/${idReservaPagada}`, { method: 'DELETE' });
+                   } catch (e) { console.error('No se pudo limpiar la reserva:', e); }
+                   sincronizarTodoElSalon();
+                 }} 
+                 
+                 onEnviarCocina={handleMandarCocina}
+                 notificacionesCocina={notificacionesCocina} 
+                 onDespacharPlato={handleDespacharPlatoSalon}
+                 config={configEmpresa}
+               />;
+      
+      case "tablero": 
+        return <TableroReservaciones mesas={mesasGlobal} reservaciones={reservasDeHoy} onNuevaReserva={() => { setFechaParaModal(hoy); setReservaEditando(null); setIsModalOpen(true); }} onEditarReserva={(res) => { setReservaEditando(res); setIsModalOpen(true); }} onAsignarMesa={(res) => setReservaParaAsignarMesa(res)} onEliminarReserva={handleEliminarReserva} onMover={handleMoverReserva} usuario={usuario} />;
+      case "calendario": 
+        return <Calendario reservaciones={reservacionesLimpias} fechaActual={fechaParaModal} setFechaActual={setFechaParaModal} onAbrirModal={(fecha) => { setFechaParaModal(fecha); setReservaEditando(null); setIsModalOpen(true); }} onEditar={(res) => { setReservaEditando(res); setIsModalOpen(true); }} onEliminar={handleEliminarReserva} />;
+      case "gestion_menu": return <GestionMenu menu={menuGlobal} onActualizar={() => sincronizarTodoElSalon()} />;
+      case "control_mesas": return <ControlMesas mesas={mesasGlobal} onActualizar={() => sincronizarTodoElSalon()} />;
       case "inventario": return <Inventario usuario={usuario} />;
       case "usuarios": return <GestionUsuarios usuarioLogueado={usuario} />;
-      case "control_mesas": return <ControlMesas />;
-      default: return <VistaEnConstruccion titulo="Módulo Pendiente" icono="🚧" />;
+      case "config_negocio": return <ConfigRestaurante />;
+      case "cocina": return <Cocina pedidos={pedidosCocina} onCompletar={handleCompletarPedidoCocina} />;
+      default: return <div className="p-12 text-center text-slate-500">Módulo en construcción...</div>;
     }
   };
 
   return (
-    <div className="flex h-screen w-full bg-[#070b16] text-slate-200 font-sans overflow-hidden">
+    <div className="flex h-screen w-full bg-[#070b16] text-slate-200 font-sans overflow-hidden select-none">
       {alertaSistema && (
-        <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+        <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
             <div className={`text-6xl mb-4 ${alertaSistema.color}`}>{alertaSistema.icono}</div>
             <h2 className="text-2xl font-black text-white mb-2">{alertaSistema.titulo}</h2>
@@ -291,11 +260,14 @@ export default function App() {
       )}
 
       <Sidebar vistaActual={vistaActiva} setVistaActual={setVistaActiva} usuario={usuario} socketConectado={socketConectado} onLogout={() => setUsuario(null)} />
-      <main className="flex-1 flex flex-col h-full relative overflow-y-auto bg-[#070b16]">{renderizarVista()}</main>
-
-      <ModalReserva isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setReservaEditando(null); }} onSave={handleGuardarReserva} fechaInicial={fechaParaModal} reservaAEditar={reservaEditando} />
-      <ModalAsignarMesa isOpen={reservaParaAsignarMesa !== null} onClose={() => setReservaParaAsignarMesa(null)} onConfirm={handleConfirmarAsignacionMesa} reserva={reservaParaAsignarMesa} mesasOcupadas={mesasOcupadasActualmente} />
+      
+      <main className="flex-1 flex flex-col h-full relative overflow-y-auto bg-[#070b16]">
+        {renderizarVista()}
+      </main>
+      
       <ModalCorteZ isOpen={datosCorteZ !== null} onClose={() => setDatosCorteZ(null)} onConfirm={handleConfirmarCierre} datos={datosCorteZ} />
+      <ModalReserva isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setReservaEditando(null); }} onSave={handleGuardarReserva} reserva={reservaEditando} fechaInicial={fechaParaModal} />
+      {reservaParaAsignarMesa && <ModalAsignarMesa isOpen={true} onClose={() => setReservaParaAsignarMesa(null)} reserva={reservaParaAsignarMesa} mesas={mesasGlobal} mesasOcupadas={mesasOcupadasActualmente} onConfirm={(numMesa) => handleConfirmarAsignacionMesa(reservaParaAsignarMesa.id, numMesa)} />}
     </div>
   );
 }

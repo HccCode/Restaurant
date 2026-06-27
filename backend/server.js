@@ -234,9 +234,6 @@ app.delete('/api/inventario/:id', async (req, res) => {
   try { await pool.query('DELETE FROM inventario WHERE id = $1', [req.params.id]); res.json({ success: true }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// =========================================================================
-// 🔥 SOLUCIÓN AL ERROR 404: RUTA COMODÍN PARA AJUSTES DE INVENTARIO 🔥
-// =========================================================================
 app.post('/api/inventario/ajuste', async (req, res) => {
   const { id, item, cantidad, nueva_cantidad, stock } = req.body;
   const cantFinal = cantidad ?? nueva_cantidad ?? stock ?? 0;
@@ -252,9 +249,6 @@ app.post('/api/inventario/ajuste', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// =========================================================================
-// 🔥 SOLUCIÓN AL ERROR 500: MERMAS BLINDADAS EN JAVASCRIPT 🔥
-// =========================================================================
 app.get('/api/mermas', async (req, res) => {
   try { 
     const result = await pool.query("SELECT * FROM mermas ORDER BY id DESC LIMIT 100"); 
@@ -294,7 +288,6 @@ app.delete('/api/mermas/:id', async (req, res) => {
     res.json({ success: true }); 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-// =========================================================================
 
 app.get('/api/reservaciones', async (req, res) => {
   try { const result = await pool.query('SELECT * FROM reservaciones ORDER BY fecha ASC, hora ASC'); res.json(result.rows.map(r => ({ ...r, numMesa: r.num_mesa }))); } catch (err) { res.status(500).json({ error: err.message }); }
@@ -340,6 +333,34 @@ app.put('/api/cocina/:id/completar', (req, res) => { const p = pedidosCocina.fin
 app.post('/api/cobrar/:idReserva', async (req, res) => {
   const { idReserva } = req.params;
   const { mesero, platillos, subtotal, iva, total, mesaNum, cliente, personas } = req.body;
+
+  // =========================================================================
+  // 🔥 REGLA DE BLINDAJE ANTIFRAUDE: COCINA DEBE CONFIRMAR DESPACHO 🔥
+  // =========================================================================
+  const mesaTarget = String(mesaNum || '').trim().toLowerCase();
+
+  // 1. ¿La cocina tiene órdenes en estatus 'pendiente' para esta mesa?
+  const cocinaOcupada = pedidosCocina.some(p => 
+    p.estado === 'pendiente' && 
+    String(p.numMesa || '').trim().toLowerCase() === mesaTarget
+  );
+
+  if (cocinaOcupada) {
+    return res.status(400).json({ 
+      error: `⛔ COBRO BLOQUEADO: La cocina aún está preparando platillos para la Mesa ${mesaNum}.` 
+    });
+  }
+
+  // 2. ¿El mesero agregó platillos a la cuenta y olvidó presionar "Marchar a Cocina"?
+  const cuentaMesa = comandasActivas[idReserva] || [];
+  const itemsSinMarchar = cuentaMesa.some(item => (item.cantidad || 0) > (item.enviado || 0));
+
+  if (itemsSinMarchar) {
+    return res.status(400).json({ 
+      error: `⛔ COBRO BLOQUEADO: Tienes platillos en la cuenta que no has enviado a marchar a cocina.` 
+    });
+  }
+  // =========================================================================
 
   const client = await pool.connect();
   try {

@@ -55,23 +55,41 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
   const puedeCobrarCuenta = mesaActivaId && cuentaActual.length > 0 && !tienePlatillosPendientesDeMarchar && !tienePlatillosListosSinEntregar;
   // =========================================================================
 
+  // 🔥 SOLUCIÓN APLICADA: Clonamos la cuenta e inyectamos copias nuevas para evitar la mutación y el "+2" en React Strict Mode 🔥
   const agregarPlatillo = (platillo) => {
     if (!mesaActivaId) return alert('Primero selecciona una de las mesas verdes en la barra superior.');
+    
     setComandas(prev => {
       const cuenta = [...(prev[mesaActivaId] || [])];
       const index = cuenta.findIndex(p => p.id === platillo.id && !p.comentario);
-      if (index >= 0) cuenta[index].cantidad += 1;
-      else cuenta.push({ ...platillo, cantidad: 1, enviado: 0, comentario: '' });
+      
+      if (index >= 0) {
+        // Clonamos el objeto exacto en ese índice para que React lo vea como un nuevo render
+        cuenta[index] = { ...cuenta[index], cantidad: cuenta[index].cantidad + 1 };
+      } else {
+        cuenta.push({ ...platillo, cantidad: 1, enviado: 0, comentario: '' });
+      }
+      
       return { ...prev, [mesaActivaId]: cuenta };
     });
   };
 
+  // 🔥 SOLUCIÓN APLICADA: También aplicamos la clonación estricta al restar o sumar desde los botones [+ / -] 🔥
   const modificarCantidad = (index, delta) => {
     setComandas(prev => {
       const cuenta = [...(prev[mesaActivaId] || [])];
-      cuenta[index].cantidad += delta;
-      if (cuenta[index].cantidad <= 0 && (cuenta[index].enviado || 0) === 0) cuenta.splice(index, 1);
-      else if (cuenta[index].cantidad < (cuenta[index].enviado || 0)) cuenta[index].cantidad = cuenta[index].enviado;
+      const itemAnterior = cuenta[index];
+      
+      // Creamos un clon del item con la nueva cantidad
+      let nuevaCantidad = itemAnterior.cantidad + delta;
+      
+      if (nuevaCantidad <= 0 && (itemAnterior.enviado || 0) === 0) {
+        cuenta.splice(index, 1);
+      } else {
+        if (nuevaCantidad < (itemAnterior.enviado || 0)) nuevaCantidad = itemAnterior.enviado;
+        cuenta[index] = { ...itemAnterior, cantidad: nuevaCantidad };
+      }
+      
       return { ...prev, [mesaActivaId]: cuenta };
     });
   };
@@ -81,7 +99,9 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
   const guardarNota = () => {
     setComandas(prev => {
       const cuenta = [...(prev[mesaActivaId] || [])];
-      if (cuenta[modalNota.index]) cuenta[modalNota.index].comentario = modalNota.texto;
+      if (cuenta[modalNota.index]) {
+        cuenta[modalNota.index] = { ...cuenta[modalNota.index], comentario: modalNota.texto };
+      }
       return { ...prev, [mesaActivaId]: cuenta };
     });
     setModalNota({ isOpen: false, index: -1, nombre: '', texto: '' });
@@ -157,7 +177,6 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
     if (!mesaActivaInfo) return;
     if (!window.confirm(`¿Liquidar cuenta de la Mesa ${mesaActivaInfo.numMesa || '?'} por $${total.toFixed(2)}?`)) return;
 
-    // 🔥 ENVIAMOS CLIENTE Y COMENSALES AL HISTORIAL DE FINANZAS 🔥
     const payload = {
       mesero: usuario?.nombre || 'Mesero de Salón',
       platillos: cuentaActual,
@@ -176,7 +195,6 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
       const data = await res.json();
       
       if (res.ok) {
-        // 🔥 SOLUCIÓN CALENDARIO: Destruye la reserva en PostgreSQL al instante de cobrar 🔥
         try {
           await fetch(`http://${window.location.hostname}:3000/api/reservaciones/${mesaActivaId}`, { method: 'DELETE' });
         } catch (err) { console.error('No se pudo limpiar la reserva:', err); }
@@ -236,7 +254,7 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
                   ))}
                 </tbody>
               </table>
-              <div className="border-t border-dashed border-slate-300 my-2"></div>
+              <div class="border-t border-dashed border-slate-300 my-2"></div>
               <div className="flex justify-between"><span>Subtotal:</span><span>${ticketParaImprimir.subtotal.toFixed(2)}</span></div>
               <div className="flex justify-between"><span>I.V.A. ({config?.iva || 16}%):</span><span>${ticketParaImprimir.iva.toFixed(2)}</span></div>
               <div className="flex justify-between font-bold text-xs border-t border-slate-900 pt-1 mt-1"><span>TOTAL COBRADO:</span><span>${ticketParaImprimir.total.toFixed(2)}</span></div>

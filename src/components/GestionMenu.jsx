@@ -39,6 +39,218 @@ export default function GestionMenu() {
   const productosFiltrados = productos.filter(p => categoriaActiva === 'Todas' || p.categoria === categoriaActiva);
 
   // =========================================================================
+  // 🔥 MOTOR EDITORIAL: GENERADOR DE MENÚ DE CARTA CLÁSICO PARA EL SALÓN 🔥
+  // =========================================================================
+  const handleImprimirMenuCarta = async () => {
+    if (!productos || productos.length === 0) return alert("El menú no tiene platillos registrados.");
+
+    // 1. Jalamos los datos frescos de la configuración del restaurante
+    let conf = { nombre_negocio: 'Sabor.io Restaurant', direccion: '', telefono: '', iva: 16 };
+    try {
+      const res = await fetch(`${BASE_URL}/configuracion`);
+      if (res.ok) conf = await res.json();
+    } catch (e) {}
+
+    // 2. Definimos el orden gastronómico tradicional para las hojas impresas
+    const ordenPrioridad = ['Entradas', 'Platos Fuertes', 'Bebidas', 'Postres', 'Extras'];
+    const categoriasExistentes = [...new Set(productos.map(p => p.categoria))];
+    
+    const categoriasOrdenadas = [
+      ...ordenPrioridad.filter(c => categoriasExistentes.includes(c)),
+      ...categoriasExistentes.filter(c => !ordenPrioridad.includes(c))
+    ];
+
+    // 3. Maquetamos los platillos bloque por bloque en HTML puro
+    let htmlPlatillos = '';
+
+    categoriasOrdenadas.forEach(cat => {
+      const platosCat = productos.filter(p => p.categoria === cat);
+      if (platosCat.length === 0) return;
+
+      htmlPlatillos += `
+        <div class="category-block">
+          <h2 class="cat-title">${cat}</h2>
+          <div class="cat-items">
+      `;
+
+      platosCat.forEach(plato => {
+        htmlPlatillos += `
+          <div class="dish">
+            <div class="dish-head">
+              <span class="dish-name">${plato.nombre}</span>
+              <span class="dish-price">$${parseFloat(plato.precio).toFixed(0)}</span>
+            </div>
+            ${plato.descripcion ? `<p class="dish-desc">${plato.descripcion}</p>` : ''}
+          </div>
+        `;
+      });
+
+      htmlPlatillos += `</div></div>`;
+    });
+
+    // 4. Abrimos e inyectamos estilos de imprenta tradicionales (Cinzel + Lato de Google Fonts)
+    const printWin = window.open('', '_blank');
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Menú de Carta - ${conf.nombre_negocio}</title>
+          <meta charset="UTF-8">
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+          <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Lato:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+          <style>
+            @page {
+              size: letter portrait;
+              margin: 2.2cm 1.8cm;
+            }
+            body {
+              background: #ffffff;
+              color: #1c1917;
+              font-family: 'Lato', sans-serif;
+              margin: 0;
+              padding: 0;
+              -webkit-print-color-adjust: exact;
+            }
+            header {
+              text-align: center;
+              margin-bottom: 45px;
+            }
+            .rest-name {
+              font-family: 'Cinzel', serif;
+              font-size: 32px;
+              font-weight: 800;
+              letter-spacing: 8px;
+              text-transform: uppercase;
+              margin: 0;
+              color: #881337; /* Color Vino Editorial */
+            }
+            .rest-sub {
+              font-size: 10px;
+              letter-spacing: 4px;
+              text-transform: uppercase;
+              color: #78716c;
+              margin-top: 8px;
+            }
+            .ornament {
+              color: #881337;
+              font-size: 12px;
+              margin: 12px 0;
+              letter-spacing: 10px;
+            }
+            .menu-columns {
+              column-count: 2;
+              column-gap: 55px;
+            }
+            .category-block {
+              break-inside: avoid;
+              page-break-inside: avoid;
+              margin-bottom: 40px;
+            }
+            .cat-title {
+              font-family: 'Cinzel', serif;
+              font-size: 15px;
+              font-weight: 800;
+              color: #881337;
+              text-align: center;
+              text-transform: uppercase;
+              letter-spacing: 3px;
+              margin: 0 0 20px 0;
+              padding-bottom: 6px;
+              border-bottom: 1px solid #e7e5e4;
+            }
+            .dish {
+              break-inside: avoid;
+              page-break-inside: avoid;
+              margin-bottom: 18px;
+            }
+            .dish-head {
+              display: grid;
+              grid-template-columns: 1fr auto;
+              align-items: end;
+              position: relative;
+              overflow: hidden;
+              margin-bottom: 3px;
+            }
+            .dish-head::after {
+              content: " ........................................................................................................................................";
+              position: absolute;
+              left: 0;
+              bottom: 3px;
+              z-index: 1;
+              color: #d6d3d1;
+              letter-spacing: 2px;
+              white-space: nowrap;
+            }
+            .dish-name {
+              font-family: 'Cinzel', serif;
+              font-weight: 600;
+              font-size: 12.5px;
+              background: #ffffff;
+              padding-right: 6px;
+              z-index: 2;
+              width: fit-content;
+              color: #1c1917;
+            }
+            .dish-price {
+              font-weight: 700;
+              font-size: 13px;
+              background: #ffffff;
+              padding-left: 6px;
+              z-index: 2;
+              color: #1c1917;
+            }
+            .dish-desc {
+              margin: 0;
+              font-size: 10.5px;
+              color: #57534e;
+              font-style: italic;
+              line-height: 1.4;
+              padding-right: 25px;
+            }
+            footer {
+              text-align: center;
+              margin-top: 60px;
+              padding-top: 15px;
+              border-top: 1px solid #e7e5e4;
+              font-size: 9px;
+              color: #a8a29e;
+              letter-spacing: 2px;
+              text-transform: uppercase;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="menu-wrapper">
+            <header>
+              <h1 class="rest-name">${conf.nombre_negocio || 'Sabor.io'}</h1>
+              <div class="ornament">◈ • ◈</div>
+              <div class="rest-sub">${conf.direccion || 'Menú de Especialidades'}</div>
+            </header>
+
+            <div class="menu-columns">
+              ${htmlPlatillos}
+            </div>
+
+            <footer>
+              Precios en M.N. incluyen I.V.A. (${conf.iva || 16}%) • ${conf.telefono ? `Reservaciones: ${conf.telefono}` : 'Gracias por su preferencia'}
+            </footer>
+          </div>
+        </body>
+      </html>
+    `);
+
+    printWin.document.close();
+    printWin.focus();
+    
+    // Retardo de medio segundo para que bajen las fuentes romanas antes del diálogo
+    setTimeout(() => {
+      printWin.print();
+      printWin.close();
+    }, 500);
+  };
+
+  // =========================================================================
   // FÍSICAS DRAG & DROP (APARTADO DE TARJETAS EN TIEMPO REAL)
   // =========================================================================
   const iniciarArrastre = (e, index) => {
@@ -176,12 +388,22 @@ export default function GestionMenu() {
             </h1>
           </div>
 
-          <button
-            onClick={() => abrirModal(null)}
-            className="bg-[#881337] hover:bg-[#700f2b] active:scale-95 text-[#FAF6EE] font-serif font-bold text-xs uppercase tracking-widest px-5 py-3 rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer shrink-0"
-          >
-            <span>+</span> Crear Platillo
-          </button>
+          {/* 🔥 BOTONERA ACCIONES DUALES: IMPRESIÓN Y CREACIÓN 🔥 */}
+          <div className="flex gap-3 shrink-0">
+            <button
+              onClick={handleImprimirMenuCarta}
+              className="bg-transparent hover:bg-[#881337]/5 border border-[#881337] text-[#881337] font-serif font-bold text-xs uppercase tracking-widest px-4.5 py-3 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>📜</span> Imprimir Menú
+            </button>
+
+            <button
+              onClick={() => abrirModal(null)}
+              className="bg-[#881337] hover:bg-[#700f2b] active:scale-95 text-[#FAF6EE] font-serif font-bold text-xs uppercase tracking-widest px-5 py-3 rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <span>+</span> Crear Platillo
+            </button>
+          </div>
         </div>
 
         {/* Marcapáginas / Categorías */}

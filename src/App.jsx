@@ -29,7 +29,13 @@ export default function App() {
   const [socketConectado, setSocketConectado] = useState(false);
   const [alertaSistema, setAlertaSistema] = useState(null);
 
-  const hoy = new Date().toISOString().split('T')[0];
+  // 🔥 MOTOR DE FECHA LOCAL MEXICALI (Erradica el brinco de las 5:00 PM en UTC-7) 🔥
+  const obtenerFechaLocal = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const hoy = obtenerFechaLocal();
   const [fechaParaModal, setFechaParaModal] = useState(hoy);
   
   const [menuGlobal, setMenuGlobal] = useState([]); 
@@ -96,7 +102,6 @@ export default function App() {
     .filter(r => r.estado === 'en-curso' && r.numMesa)
     .map(r => ({ num: String(r.numMesa).trim(), nombre: r.nombre }));
 
-
   // =========================================================================
   // 🔥 ENRUTADOR INTELIGENTE DE VISTA INICIAL POR ROL 🔥
   // =========================================================================
@@ -117,7 +122,6 @@ export default function App() {
     setVistaActiva(obtenerVistaInicial(u.rol)); 
   };
   // =========================================================================
-
 
   const handleActualizarComandas = (nuevoEstado) => {
     setComandas(prev => {
@@ -219,12 +223,32 @@ export default function App() {
                  setComandas={handleActualizarComandas} 
                  usuario={usuario} 
                  
+                 // =====================================================================
+                 // 🔥 ADUANA VISUAL: ABORTA EL COBRO SI LA COCINA SIGUE TRABAJANDO 🔥
+                 // =====================================================================
                  onCobrar={async (idReservaPagada) => {
+                   const reserva = reservacionesLimpias.find(r => r.id === idReservaPagada);
+                   const mesaTarget = String(reserva?.numMesa || '').trim().toLowerCase();
+
+                   const cocinaTrabajando = pedidosCocina.some(p => 
+                     String(p.numMesa || '').trim().toLowerCase() === mesaTarget && p.estado === 'pendiente'
+                   );
+
+                   if (cocinaTrabajando) {
+                     return setAlertaSistema({
+                       titulo: 'Mesa en Proceso',
+                       mensaje: `La Mesa ${reserva?.numMesa} tiene platillos preparándose en cocina. No puedes cobrar hasta que el chef los marque como terminados.`,
+                       icono: '⏳',
+                       color: 'text-rose-500'
+                     });
+                   }
+
                    try {
                      await fetch(`${BASE_URL}/reservaciones/${idReservaPagada}`, { method: 'DELETE' });
                    } catch (e) { console.error('No se pudo limpiar la reserva:', e); }
                    sincronizarTodoElSalon();
                  }} 
+                 // =====================================================================
                  
                  onEnviarCocina={handleMandarCocina}
                  notificacionesCocina={notificacionesCocina} 

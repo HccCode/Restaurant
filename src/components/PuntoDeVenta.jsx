@@ -4,20 +4,19 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
   const [mesaActivaId, setMesaActivaId] = useState('');
   const [categoriaActiva, setCategoriaActiva] = useState('Platos Fuertes');
   
-  // Modal de Notas (Diseño Magenta)
+  // Modales
   const [modalNota, setModalNota] = useState({ isOpen: false, index: -1, nombre: '', texto: '' });
-  
-  // Control de ventanas de notificaciones de Cocina
   const [modalNotificacionesOpen, setModalNotificacionesOpen] = useState(false);
-
-  // Guarda la información del ticket que se acaba de pagar para imprimirlo
   const [ticketParaImprimir, setTicketParaImprimir] = useState(null);
+
+  // Modal de Confirmación de Cobro Nativo
+  const [modalCobro, setModalCobro] = useState({ isOpen: false, cargando: false, error: null });
 
   useEffect(() => {
     if (notificacionesCocina.length === 0) setModalNotificacionesOpen(false);
   }, [notificacionesCocina]);
 
-  const categorias = useMemo(() => {
+  const gridCategorias = useMemo(() => {
     const cats = new Set(menu.map(p => p.categoria));
     const ordenadas = ['Platos Fuertes', 'Entradas', 'Bebidas', 'Postres'];
     const extras = Array.from(cats).filter(c => !ordenadas.includes(c));
@@ -41,7 +40,7 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
   const total = subtotal + iva;
 
   // =========================================================================
-  // VALIDACIÓN FISCAL Y CANDADOS OPERATIVOS
+  // VALIDACIÓN DE CANDADOS OPERATIVOS PRIMARIOS
   // =========================================================================
   const tienePlatillosPendientesDeMarchar = useMemo(() => {
     return cuentaActual.some(item => item.cantidad > (item.enviado || 0));
@@ -55,7 +54,6 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
   const puedeCobrarCuenta = mesaActivaId && cuentaActual.length > 0 && !tienePlatillosPendientesDeMarchar && !tienePlatillosListosSinEntregar;
   // =========================================================================
 
-  // 🔥 SOLUCIÓN APLICADA: Clonamos la cuenta e inyectamos copias nuevas para evitar la mutación y el "+2" en React Strict Mode 🔥
   const agregarPlatillo = (platillo) => {
     if (!mesaActivaId) return alert('Primero selecciona una de las mesas verdes en la barra superior.');
     
@@ -64,7 +62,6 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
       const index = cuenta.findIndex(p => p.id === platillo.id && !p.comentario);
       
       if (index >= 0) {
-        // Clonamos el objeto exacto en ese índice para que React lo vea como un nuevo render
         cuenta[index] = { ...cuenta[index], cantidad: cuenta[index].cantidad + 1 };
       } else {
         cuenta.push({ ...platillo, cantidad: 1, enviado: 0, comentario: '' });
@@ -74,13 +71,11 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
     });
   };
 
-  // 🔥 SOLUCIÓN APLICADA: También aplicamos la clonación estricta al restar o sumar desde los botones [+ / -] 🔥
   const modificarCantidad = (index, delta) => {
     setComandas(prev => {
       const cuenta = [...(prev[mesaActivaId] || [])];
       const itemAnterior = cuenta[index];
       
-      // Creamos un clon del item con la nueva cantidad
       let nuevaCantidad = itemAnterior.cantidad + delta;
       
       if (nuevaCantidad <= 0 && (itemAnterior.enviado || 0) === 0) {
@@ -107,10 +102,24 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
     setModalNota({ isOpen: false, index: -1, nombre: '', texto: '' });
   };
 
+  // =========================================================================
+  // 🔥 MOTOR DE IMPRESIÓN FANTASMA EN LA MISMA PESTAÑA 🔥
+  // =========================================================================
   const handleImprimirTicket = () => {
     if (!ticketParaImprimir) return;
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
+
+    // 1. Creamos un Iframe invisible
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    // 2. Le inyectamos el HTML del ticket
+    const htmlContent = `
       <html>
         <head>
           <title>Ticket #${ticketParaImprimir.folio}</title>
@@ -165,17 +174,58 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
           </div>
         </body>
       </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-    printWindow.close();
+    `;
+
+    const doc = iframe.contentWindow || iframe.contentDocument.document || iframe.contentDocument;
+    doc.document.open();
+    doc.document.write(htmlContent);
+    doc.document.close();
+
+    // 3. Imprimimos nativamente y luego matamos al iframe
+    iframe.contentWindow.focus();
+    setTimeout(() => {
+      iframe.contentWindow.print();
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 500); // Le damos tiempo a la ventana de impresión para que tome los datos
+    }, 250);
+  };
+  // =========================================================================
+
+  const solicitarConfirmacionCobro = async () => {
+    if (!puedeCobrarCuenta || !mesaActivaInfo) return;
+
+    setModalCobro({ isOpen: true, cargando: true, error: null });
+
+    try {
+      const res = await fetch(`http://${window.location.hostname}:3000/api/cocina`);
+      const comandasCocina = await res.json();
+      
+      const mesaTarget = String(mesaActivaInfo.numMesa || '').trim().toLowerCase();
+      const cocinaTrabajando = comandasCocina.some(p => String(p.numMesa || '').trim().toLowerCase() === mesaTarget);
+
+      if (cocinaTrabajando) {
+        setModalCobro({
+          isOpen: true,
+          cargando: false,
+          error: `El chef todavía está preparando pedidos marchados en la cocina para la Mesa ${mesaActivaInfo.numMesa}. Es obligatorio esperar a que se terminen de cocinar.`
+        });
+        return;
+      }
+
+      setModalCobro({ isOpen: true, cargando: false, error: null });
+
+    } catch (error) {
+      setModalCobro({
+        isOpen: true,
+        cargando: false,
+        error: 'Fallo crítico de comunicación de red. No se pudo verificar el estatus de la cocina.'
+      });
+    }
   };
 
   const procesarPagoMesa = async () => {
-    if (!puedeCobrarCuenta) return;
-    if (!mesaActivaInfo) return;
-    if (!window.confirm(`¿Liquidar cuenta de la Mesa ${mesaActivaInfo.numMesa || '?'} por $${total.toFixed(2)}?`)) return;
+    setModalCobro(prev => ({ ...prev, cargando: true }));
 
     const payload = {
       mesero: usuario?.nombre || 'Mesero de Salón',
@@ -213,14 +263,81 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
 
         const idMesaLiberada = mesaActivaId;
         setMesaActivaId('');
+        setModalCobro({ isOpen: false, cargando: false, error: null });
         if (onCobrar) onCobrar(idMesaLiberada);
-      } else { alert(`Error en el servidor: ${data.error}`); }
-    } catch (e) { alert(`No se pudo conectar al servidor: ${e.message}`); }
+      } else { 
+        setModalCobro({ isOpen: true, cargando: false, error: data.error }); 
+      }
+    } catch (e) { 
+      setModalCobro({ isOpen: true, cargando: false, error: `Error en red local: ${e.message}` }); 
+    }
   };
 
   return (
     <div className="flex w-full h-full bg-[#070b16] font-sans select-none overflow-hidden relative">
       
+      {/* MODAL INTERNO DE REVISIÓN Y CONFIRMACIÓN DE COBRO */}
+      {modalCobro.isOpen && (
+        <div className="fixed inset-0 z-[400] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#0b1120] border border-slate-800 rounded-3xl p-6 md:p-8 max-w-sm w-full shadow-2xl flex flex-col relative overflow-hidden">
+
+            {modalCobro.cargando ? (
+              <div className="flex flex-col items-center justify-center py-10">
+                <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mb-4"></div>
+                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest font-mono">Verificando comanda...</p>
+              </div>
+            ) : modalCobro.error ? (
+              <>
+                <div className="absolute top-0 left-0 w-1.5 h-full bg-rose-600"></div>
+                <div className="text-center mb-6">
+                  <span className="text-5xl block mb-3">🛑</span>
+                  <h2 className="text-lg font-black text-white uppercase tracking-wider mb-2">Transacción Detenida</h2>
+                  <p className="text-xs text-rose-300 font-medium leading-relaxed bg-rose-500/10 p-4 rounded-xl border border-rose-500/20 text-left">
+                    {modalCobro.error}
+                  </p>
+                </div>
+                <button onClick={() => setModalCobro({ isOpen: false, cargando: false, error: null })} className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-black rounded-xl uppercase tracking-widest text-[10px] cursor-pointer transition-colors shadow-md">
+                  Regresar al Salón
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
+                <div className="text-center mb-5">
+                  <span className="text-5xl block mb-2">💸</span>
+                  <h2 className="text-xl font-black text-white tracking-tight mb-1">Cerrar Cuenta Actual</h2>
+                  <p className="text-[11px] text-slate-400 uppercase tracking-widest">
+                    Mesa {mesaActivaInfo?.numMesa || 'Barra'} • {mesaActivaInfo?.nombre || 'General'}
+                  </p>
+                </div>
+
+                <div className="bg-[#050812] border border-slate-800 rounded-2xl p-5 mb-6 space-y-2.5">
+                  <div className="flex justify-between text-xs text-slate-400 font-medium">
+                    <span>Subtotal Consumido</span><span className="font-mono">${subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-slate-400 font-medium">
+                    <span>I.V.A. Transaccional ({config?.iva || 16}%)</span><span className="font-mono">${iva.toFixed(2)}</span>
+                  </div>
+                  <div className="border-t border-dashed border-slate-700 my-2 pt-3 flex justify-between items-end">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Monto Liquidador</span>
+                    <span className="text-3xl font-black text-emerald-400 font-mono tracking-tighter">${total.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button onClick={() => setModalCobro({ isOpen: false, cargando: false, error: null })} className="flex-1 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl uppercase tracking-widest text-[10px] cursor-pointer transition-colors">
+                    Volver
+                  </button>
+                  <button onClick={procesarPagoMesa} className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl uppercase tracking-widest text-[10px] shadow-lg shadow-emerald-600/20 cursor-pointer transition-transform active:scale-95 flex items-center justify-center gap-1.5">
+                    <span>✔️</span> Liquidar
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* MODAL: TICKET DE CONSUMO (VISTA PREVIA FISICA) */}
       {ticketParaImprimir && (
         <div className="fixed inset-0 z-[350] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
@@ -254,7 +371,7 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
                   ))}
                 </tbody>
               </table>
-              <div class="border-t border-dashed border-slate-300 my-2"></div>
+              <div className="border-t border-dashed border-slate-300 my-2"></div>
               <div className="flex justify-between"><span>Subtotal:</span><span>${ticketParaImprimir.subtotal.toFixed(2)}</span></div>
               <div className="flex justify-between"><span>I.V.A. ({config?.iva || 16}%):</span><span>${ticketParaImprimir.iva.toFixed(2)}</span></div>
               <div className="flex justify-between font-bold text-xs border-t border-slate-900 pt-1 mt-1"><span>TOTAL COBRADO:</span><span>${ticketParaImprimir.total.toFixed(2)}</span></div>
@@ -263,7 +380,7 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
             </div>
             <div className="flex gap-3 mt-4">
               <button onClick={() => setTicketParaImprimir(null)} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl uppercase tracking-widest text-[10px] cursor-pointer">Cerrar</button>
-              <button onClick={handleImprimirTicket} className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-xl uppercase tracking-widest text-[10px] shadow-lg shadow-indigo-600/20 cursor-pointer transition-transform active:scale-95">🖨️ Imprimir Ticket</button>
+              <button onClick={handleImprimirTicket} className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-xl uppercase tracking-widest text-[10px] shadow-lg shadow-indigo-600/20 cursor-pointer transition-transform active:scale-95">🖨️ Mandar a Ticketera</button>
             </div>
           </div>
         </div>
@@ -352,7 +469,7 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
           </div>
 
           <div className="flex gap-3 overflow-x-auto pb-1 shrink-0 scrollbar-none items-center border-t border-slate-800/60 pt-3">
-            {categorias.map(cat => (
+            {gridCategorias.map(cat => (
               <button key={cat} onClick={() => setCategoriaActiva(cat)} className={`px-5 py-2 rounded-[18px] text-xs tracking-wide transition-all cursor-pointer whitespace-nowrap ${categoriaActiva === cat ? 'bg-[#5a4bfa] text-white font-black shadow-lg shadow-indigo-500/25' : 'text-slate-400 hover:text-white font-bold bg-transparent'}`}>{cat}</button>
             ))}
           </div>
@@ -425,7 +542,7 @@ export default function PuntoDeVenta({ menu, reservaciones, comandas, setComanda
           </div>
           <div className="grid grid-cols-2 gap-2.5">
             <button disabled={!mesaActivaId || cuentaActual.length === 0} onClick={() => onEnviarCocina(mesaActivaInfo, cuentaActual)} className="py-2.5 bg-[#9a3412] hover:bg-[#c2410c] disabled:opacity-40 text-white font-black rounded-xl text-[10px] tracking-widest uppercase transition-all cursor-pointer shadow-md">🔥 MARCHAR</button>
-            <button disabled={!puedeCobrarCuenta} onClick={procesarPagoMesa} className="py-2.5 bg-[#047857] hover:bg-[#059669] disabled:opacity-40 text-white font-black rounded-xl text-[10px] tracking-widest uppercase transition-all cursor-pointer shadow-md">💵 COBRAR</button>
+            <button disabled={!puedeCobrarCuenta} onClick={solicitarConfirmacionCobro} className="py-2.5 bg-[#047857] hover:bg-[#059669] disabled:opacity-40 text-white font-black rounded-xl text-[10px] tracking-widest uppercase transition-all cursor-pointer shadow-md">💵 COBRAR</button>
           </div>
         </div>
 

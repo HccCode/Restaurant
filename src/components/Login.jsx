@@ -5,24 +5,10 @@ export default function Login({ onLogin }) {
   const [error, setError] = useState(null);
   const [cargando, setCargando] = useState(false);
 
-  // REGLA FÍSICA: Bloquea el ingreso al llegar al 4to dígito
-  const handleNumClick = (num) => {
-    if (pin.length < 4) {
-      setError(null);
-      setPin(prev => prev + num);
-    }
-  };
+  // 1. EXTRAEMOS LA LÓGICA DE PETICIÓN A UNA FUNCIÓN INDEPENDIENTE
+  const procesarLogin = async (pinAEnviar) => {
+    const pinLimpio = pinAEnviar ? pinAEnviar.trim() : '';
 
-  const handleBorrar = () => {
-    setPin(prev => prev.slice(0, -1));
-    setError(null);
-  };
-
-  const handleSubmit = async (e) => {
-    if (e) e.preventDefault();
-    const pinLimpio = pin ? pin.trim() : '';
-
-    // REGLA LÓGICA: Prohibido enviar si no hay 4 dígitos exactos
     if (pinLimpio.length !== 4) {
       setError('El PIN consta de 4 dígitos numéricos');
       return;
@@ -50,7 +36,7 @@ export default function Login({ onLogin }) {
         onLogin(data);
       } else {
         setError(data?.error || 'Acceso Denegado');
-        setPin('');
+        setPin(''); // Limpiar pin en caso de error de credenciales
       }
     } catch (err) {
       setError(`Sin respuesta del servidor (${hostAnfitrion}:3000)`);
@@ -59,9 +45,37 @@ export default function Login({ onLogin }) {
     }
   };
 
-  // SOPORTE DE TECLADO FÍSICO (Para que no tengas que usar el mouse en la PC)
+  // REGLA FÍSICA: Bloquea el ingreso al llegar al 4to dígito y dispara el Auto-Enter
+  const handleNumClick = (num) => {
+    if (pin.length < 4) {
+      setError(null);
+      const nuevoPin = pin + num;
+      setPin(nuevoPin);
+
+      // AUTO-ENTER: Si con el dígito actual ya son 4, procesar de inmediato.
+      if (nuevoPin.length === 4) {
+        procesarLogin(nuevoPin);
+      }
+    }
+  };
+
+  const handleBorrar = () => {
+    setPin(prev => prev.slice(0, -1));
+    setError(null);
+  };
+
+  // 2. EL BOTÓN ENTRAR SIMPLEMENTE LLAMA A LA FUNCIÓN CON EL ESTADO ACTUAL
+  const handleSubmit = (e) => {
+    if (e) e.preventDefault();
+    procesarLogin(pin);
+  };
+
+  // SOPORTE DE TECLADO FÍSICO
   useEffect(() => {
     const handleKeyDown = (event) => {
+      // Evitar que teclee si está cargando
+      if (cargando) return; 
+
       if (/^[0-9]$/.test(event.key)) {
         handleNumClick(event.key);
       } else if (event.key === 'Backspace') {
@@ -73,7 +87,7 @@ export default function Login({ onLogin }) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [pin]);
+  }, [pin, cargando]); // Añadimos 'cargando' a las dependencias para bloquear el teclado durante el fetch
 
   return (
     <div className="flex h-screen w-full bg-[#070b16] items-center justify-center select-none p-4 font-sans">
@@ -86,7 +100,7 @@ export default function Login({ onLogin }) {
         <h2 className="text-2xl font-black text-white tracking-tight">Sabor.io POS</h2>
         <p className="text-xs text-slate-400 font-mono mb-6">Terminal de Salón</p>
 
-        {/* VISOR DEL PIN (Estilo cajero automático) */}
+        {/* VISOR DEL PIN */}
         <div className="w-full bg-slate-950 border border-slate-800 rounded-2xl h-14 mb-2 flex items-center justify-center text-2xl tracking-[0.4em] font-mono font-black text-indigo-400 shadow-inner overflow-hidden px-4">
           {pin ? '•'.repeat(pin.length) : <span className="text-sm tracking-widest text-slate-600 font-mono font-bold select-none opacity-50">••••</span>}
         </div>

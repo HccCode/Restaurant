@@ -4,6 +4,10 @@ export default function TableroReservaciones({ reservaciones = [], onNuevaReserv
   const [mesasLayout, setMesasLayout] = useState([]);
   const BASE_URL = `http://${window.location.hostname}:3000/api`;
 
+  // ESTADOS: Control del modal de Walk-ins rápidos
+  const [modalWalkIn, setModalWalkIn] = useState(false);
+  const [walkInForm, setWalkInForm] = useState({ nombre: '', personas: '2' });
+
   const cargarMesas = async () => {
     try {
       const res = await fetch(`${BASE_URL}/mesas`);
@@ -20,7 +24,6 @@ export default function TableroReservaciones({ reservaciones = [], onNuevaReserv
     { id: 'en-curso', titulo: 'En Curso', color: 'border-emerald-500/40 text-emerald-400', hex: 'bg-emerald-500' }
   ];
 
-  // 🔥 TRUCO MAGNÉTICO: Atrapa la reserva sin importar cómo la escribió SQL 🔥
   const empatarColumna = (reserva, colId) => {
     const est = String(reserva.estado || 'pendientes').toLowerCase().trim();
     
@@ -42,9 +45,101 @@ export default function TableroReservaciones({ reservaciones = [], onNuevaReserv
     }
   });
 
-  return (
-    <div className="flex-1 w-full h-full flex flex-col xl:flex-row overflow-hidden font-sans select-none p-4 md:p-6 gap-6 bg-[#070b16]">
+  // =========================================================================
+  // 🔥 DICCIONARIO DE PRIORIDADES GLOBALES DE ZONAS 🔥
+  // =========================================================================
+  const prioridadesGlobales = {
+    'VIP': { nivel: 1, icono: '💎', color: 'text-fuchsia-400' },
+    'Terraza': { nivel: 2, icono: '🌅', color: 'text-orange-400' },
+    'General': { nivel: 3, icono: '🍽️', color: 'text-slate-300' },
+    'Salón Segundo Piso': { nivel: 4, icono: '🏙️', color: 'text-blue-400' },
+    'Segundo Piso': { nivel: 4, icono: '🏙️', color: 'text-blue-400' },
+    'Barra': { nivel: 5, icono: '🍸', color: 'text-amber-500' }
+  };
+
+  // Extraemos las zonas únicas que existen en tu base de datos y las ordenamos
+  const zonasUnicasOrdenadas = [...new Set(mesasLayout.map(m => m.zona))].sort((a, b) => {
+    const prioridadA = prioridadesGlobales[a]?.nivel || 99;
+    const prioridadB = prioridadesGlobales[b]?.nivel || 99;
+    return prioridadA - prioridadB;
+  });
+  // =========================================================================
+
+  const handleGuardarWalkIn = async (e) => {
+    e.preventDefault();
+    if (!walkInForm.nombre) return;
+
+    const d = new Date();
+    const fechaStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const horas = d.getHours().toString().padStart(2, '0');
+    const minutos = d.getMinutes().toString().padStart(2, '0');
+    const horaSegura = `${horas}:${minutos}`;
+
+    const payloadReserva = {
+      nombre: walkInForm.nombre.trim(),
+      fecha: fechaStr,
+      hora: horaSegura, 
+      personas: parseInt(walkInForm.personas) || 1,
+      telefono: 'N/A',
+      tipo: 'General', 
+      etiqueta: 'Walk-in',
+      color: 'from-amber-400 to-orange-500' 
+    };
+
+    try {
+      const res = await fetch(`${BASE_URL}/reservaciones`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payloadReserva)
+      });
       
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.error || 'Error desconocido del servidor SQL');
+
+      if (data && data.id) {
+        await fetch(`${BASE_URL}/reservaciones/${data.id}/estado`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ estado: 'espera' })
+        });
+      }
+
+      setModalWalkIn(false);
+      setWalkInForm({ nombre: '', personas: '2' });
+    } catch (error) {
+      alert(`Servidor SQL rechazó la entrada: ${error.message}`);
+    }
+  };
+
+  return (
+    <div className="flex-1 w-full h-full flex flex-col xl:flex-row overflow-hidden font-sans select-none p-4 md:p-6 gap-6 bg-[#070b16] relative">
+      
+      {/* MODAL FLOTANTE: LLEGADA RÁPIDA (WALK-IN) */}
+      {modalWalkIn && (
+        <div className="fixed inset-0 z-[500] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#0b1120] border border-amber-500/30 rounded-3xl p-6 md:p-8 max-w-sm w-full shadow-[0_0_40px_rgba(217,119,6,0.15)] relative">
+            <h2 className="text-xl font-black text-white mb-1 flex items-center gap-2"><span>🚶</span> Ingreso a Lobby</h2>
+            <p className="text-xs text-slate-400 mb-6">Registra clientes sin cita para sentarlos rápido.</p>
+
+            <form onSubmit={handleGuardarWalkIn} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5">Nombre del Cliente</label>
+                <input type="text" autoFocus required value={walkInForm.nombre} onChange={e => setWalkInForm({...walkInForm, nombre: e.target.value})} className="w-full bg-[#050812] border border-slate-700 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 transition-colors" placeholder="Ej. Familia López" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5">Número de Personas</label>
+                <input type="number" min="1" required value={walkInForm.personas} onChange={e => setWalkInForm({...walkInForm, personas: e.target.value})} className="w-full bg-[#050812] border border-slate-700 text-amber-400 font-black rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 transition-colors text-center font-mono" />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setModalWalkIn(false)} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl uppercase tracking-widest text-[10px] transition-colors cursor-pointer">Cancelar</button>
+                <button type="submit" className="flex-1 py-3 bg-[#d97706] hover:bg-[#ea580c] text-white font-black rounded-xl uppercase tracking-widest text-[10px] shadow-lg shadow-amber-900/30 transition-transform active:scale-95 cursor-pointer">A Sala de Espera</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* COLUMNA IZQUIERDA: EL TABLERO KANBAN */}
       <div className="flex-1 flex flex-col gap-4 overflow-hidden">
         
@@ -54,12 +149,21 @@ export default function TableroReservaciones({ reservaciones = [], onNuevaReserv
             <p className="text-xs text-slate-400 mt-1">Controla el ciclo de vida del comensal y asigna mesas en vivo.</p>
           </div>
           
-          <button
-            onClick={onNuevaReserva}
-            className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
-          >
-            <span>➕ Nueva Reservación</span>
-          </button>
+          <div className="flex flex-col sm:flex-row gap-3 mt-2 sm:mt-0 shrink-0">
+            <button
+              onClick={() => setModalWalkIn(true)}
+              className="px-5 py-3 bg-[#d97706] hover:bg-[#ea580c] text-white rounded-xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-amber-900/20 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2 border border-amber-500/30"
+            >
+              <span>🚶 Llegada Rápida</span>
+            </button>
+
+            <button
+              onClick={onNuevaReserva}
+              className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <span>➕ Nueva Reserva</span>
+            </button>
+          </div>
         </header>
 
         {esPersonalAutorizado && (
@@ -108,6 +212,7 @@ export default function TableroReservaciones({ reservaciones = [], onNuevaReserv
                         key={r.id} 
                         r={r} 
                         colId={col.id}
+                        mesasLayout={mesasLayout} 
                         onEditarReserva={onEditarReserva} 
                         onEliminarReserva={onEliminarReserva} 
                         onAsignarMesa={onAsignarMesa} 
@@ -122,21 +227,35 @@ export default function TableroReservaciones({ reservaciones = [], onNuevaReserv
         </div>
       </div>
 
-      {/* COLUMNA DERECHA: MAPA DE OCUPACIÓN EN VIVO */}
+      {/* COLUMNA DERECHA: MAPA DE OCUPACIÓN EN VIVO (CON PRIORIDADES APLICADAS) */}
       <div className="w-full xl:w-80 bg-[#0a0f1d] border border-slate-800/80 rounded-2xl p-4 flex flex-col h-fit xl:h-full shrink-0">
         <div className="border-b border-slate-800 pb-2 mb-4 flex justify-between items-center">
-          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Ocupación en Tiempo Real</h3>
+          <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Layout Jerárquico</h3>
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-5 pr-1 scrollbar-thin scrollbar-thumb-slate-800 pb-20">
-          {['General', 'Terraza', 'VIP', 'Barra', 'Salón Segundo Piso'].map(zona => {
+        <div className="flex-1 overflow-y-auto space-y-6 pr-1 scrollbar-thin scrollbar-thumb-slate-800 pb-20">
+          
+          {/* 🔥 ITERAMOS SOBRE LAS ZONAS YA ORDENADAS POR PRIORIDAD 🔥 */}
+          {zonasUnicasOrdenadas.map(zona => {
             const mesasDeLaZona = mesasLayout.filter(m => m.zona === zona);
             if (mesasDeLaZona.length === 0) return null;
 
+            // Extraemos la configuración visual (si no existe, aplicamos valores neutros)
+            const configZona = prioridadesGlobales[zona] || { nivel: 99, icono: '📍', color: 'text-slate-300' };
+
             return (
-              <div key={zona} className="space-y-1.5">
-                <span className="text-[10px] font-mono font-bold tracking-widest text-slate-500 uppercase block pl-1">{zona}</span>
+              <div key={zona} className="space-y-2">
+                <div className="flex justify-between items-center pl-1 border-b border-slate-800/40 pb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm">{configZona.icono}</span>
+                    <span className={`text-[10px] font-mono font-bold tracking-widest uppercase ${configZona.color}`}>{zona}</span>
+                  </div>
+                  <span className="text-[8px] font-black uppercase tracking-widest bg-slate-900 border border-slate-700/50 text-slate-500 px-1.5 py-0.5 rounded opacity-70">
+                    Nivel {configZona.nivel !== 99 ? configZona.nivel : '-'}
+                  </span>
+                </div>
+                
                 <div className="grid grid-cols-3 sm:grid-cols-4 xl:grid-cols-3 gap-2">
                   {mesasDeLaZona.map(mesa => {
                     const clienteOcupando = mapaMesasOcupadas[String(mesa.numero).toUpperCase().trim()];
@@ -149,7 +268,7 @@ export default function TableroReservaciones({ reservaciones = [], onNuevaReserv
                         className={`p-2.5 rounded-xl border flex flex-col items-center justify-center text-center font-mono transition-all relative ${
                           estaOcupada
                             ? 'bg-rose-500/10 border-rose-500/20 text-rose-400 shadow-md' 
-                            : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                            : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:border-emerald-500/40' 
                         }`}
                       >
                         <span className="text-xs font-black block tracking-wider">{mesa.numero}</span>
@@ -176,7 +295,10 @@ export default function TableroReservaciones({ reservaciones = [], onNuevaReserv
   );
 }
 
-function TarjetaReserva({ r, colId, onEditarReserva, onEliminarReserva, onAsignarMesa, onMover }) {
+function TarjetaReserva({ r, colId, mesasLayout = [], onEditarReserva, onEliminarReserva, onAsignarMesa, onMover }) {
+  const mesaEncontrada = r.numMesa ? mesasLayout.find(m => String(m.numero).toUpperCase().trim() === String(r.numMesa).toUpperCase().trim()) : null;
+  const zonaReal = mesaEncontrada ? mesaEncontrada.zona : r.tipo;
+
   return (
     <div className="bg-[#0b1120] border border-slate-800 rounded-xl p-4 shadow-md hover:border-slate-700 transition-all flex flex-col gap-3 group relative">
       <div className="flex justify-between items-center">
@@ -186,11 +308,13 @@ function TarjetaReserva({ r, colId, onEditarReserva, onEliminarReserva, onAsigna
 
       <div>
         <h4 className="text-xs font-black text-white leading-tight truncate">{r.nombre}</h4>
-        {r.telefono && <p className="text-[10px] text-slate-500 font-mono mt-0.5">{r.telefono}</p>}
+        {r.telefono && r.telefono !== 'N/A' && <p className="text-[10px] text-slate-500 font-mono mt-0.5">{r.telefono}</p>}
       </div>
 
       <div className="flex flex-wrap gap-1.5 items-center mt-1">
-        <span className="bg-slate-900 border border-slate-800 text-slate-400 text-[9px] px-1.5 py-0.5 rounded font-semibold">📍 {r.tipo}</span>
+        {zonaReal && (
+          <span className="bg-slate-900 border border-slate-800 text-slate-400 text-[9px] px-1.5 py-0.5 rounded font-semibold">📍 {zonaReal}</span>
+        )}
         
         {r.numMesa ? (
           <span className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[9px] px-1.5 py-0.5 rounded font-black uppercase font-mono">🪑 Mesa {r.numMesa}</span>
@@ -202,11 +326,11 @@ function TarjetaReserva({ r, colId, onEditarReserva, onEliminarReserva, onAsigna
       </div>
 
       <div className="flex justify-between items-center pt-2.5 border-t border-slate-800/60 mt-1">
-        <div className="flex gap-2 text-slate-500">
-          <button onClick={() => onEditarReserva(r)} className="hover:text-white transition-colors cursor-pointer text-xs" title="Editar">✏️</button>
-          <button onClick={() => onEliminarReserva(r.id)} className="hover:text-rose-400 transition-colors cursor-pointer text-xs" title="Eliminar">🗑️</button>
+        <div className="flex gap-3 text-slate-500 items-center">
+          <button onClick={() => onEditarReserva(r)} className="hover:text-white transition-all cursor-pointer text-base hover:scale-110" title="Editar">✏️</button>
+          <button onClick={() => onEliminarReserva(r.id)} className="hover:text-rose-400 transition-all cursor-pointer text-base hover:scale-110" title="Eliminar">🗑️</button>
           {!r.numMesa && colId !== 'en-curso' && (
-            <button onClick={() => onAsignarMesa(r)} className="hover:text-emerald-400 transition-colors cursor-pointer text-xs" title="Vincular mesa">🪑</button>
+            <button onClick={() => onAsignarMesa(r)} className="hover:text-emerald-400 transition-all cursor-pointer text-base hover:scale-110" title="Vincular mesa">🪑</button>
           )}
         </div>
 

@@ -14,7 +14,24 @@ export default function HistorialCortes() {
 
   useEffect(() => { buscarCortes(); }, [filtroFecha]); 
 
-  // 🔥 MOTOR EXCEL PARA AUDITORÍAS HISTÓRICAS (.xls) 🔥
+  // 🔥 EXTRAEMOS TOTALES MATEMÁTICOS REALES DE LA BASE DE DATOS 🔥
+  let historiEfectivoVentas = 0;
+  let historiTarjetaVentas = 0;
+  let historiEfectivoPropinas = 0;
+  let historiTarjetaPropinas = 0;
+
+  if (corteSeleccionado && corteSeleccionado.ventas_detalle) {
+    corteSeleccionado.ventas_detalle.forEach(v => {
+      historiEfectivoVentas += parseFloat(v.pago_efectivo || 0);
+      historiTarjetaVentas += parseFloat(v.pago_tarjeta || 0);
+      historiEfectivoPropinas += parseFloat(v.propina_efectivo || 0);
+      historiTarjetaPropinas += parseFloat(v.propina_tarjeta || 0);
+    });
+  }
+
+  // =========================================================================
+  // 🔥 MOTOR EXCEL ACTUALIZADO (AHORA CON COLUMNA DE MESERO Y MESA) 🔥
+  // =========================================================================
   const exportarExcelAuditoria = () => {
     if (!corteSeleccionado) return;
 
@@ -22,20 +39,22 @@ export default function HistorialCortes() {
       <table border="1" style="font-family: Arial, sans-serif; border-collapse: collapse;">
         <thead>
           <tr>
-            <th colspan="5" style="background:#1e1b4b; color:#ffffff; font-size:16px; padding:15px;">
+            <th colspan="7" style="background:#1e1b4b; color:#ffffff; font-size:16px; padding:15px;">
               AUDITORÍA DESGLOSADA DE TURNO — ${corteSeleccionado.folio}
             </th>
           </tr>
           <tr style="background:#f8fafc;">
-            <td colspan="2" style="padding:8px;"><b>Auditado por:</b> @${corteSeleccionado.usuario_cierre}</td>
+            <td colspan="4" style="padding:8px;"><b>Auditado por:</b> @${corteSeleccionado.usuario_cierre}</td>
             <td colspan="3" style="padding:8px;"><b>Fecha:</b> ${new Date(corteSeleccionado.fecha).toLocaleString('es-MX')}</td>
           </tr>
-          <tr><td colspan="5"></td></tr>
+          <tr><td colspan="7"></td></tr>
           <tr style="background:#cbd5e1; color:#0f172a; font-weight:bold;">
             <th style="padding:10px; width:80px;">Mesa</th>
-            <th style="padding:10px; width:180px;">Cliente / Titular</th>
-            <th style="padding:10px; width:80px;">Pax</th>
+            <th style="padding:10px; width:120px;">Atendió</th>
+            <th style="padding:10px; width:160px;">Cliente / Titular</th>
+            <th style="padding:10px; width:60px;">Pax</th>
             <th style="padding:10px; width:350px;">Consumo (Alimentos y Bebidas)</th>
+            <th style="padding:10px; width:100px; color:#b45309;">Propina</th>
             <th style="padding:10px; width:120px;">Cobrado</th>
           </tr>
         </thead>
@@ -45,7 +64,7 @@ export default function HistorialCortes() {
     const ventas = corteSeleccionado.ventas_detalle || [];
 
     if (ventas.length === 0) {
-      html += `<tr><td colspan="5" style="padding:20px; text-align:center; font-style:italic;">Este corte histórico se realizó antes de activar el registro de alimentos desglosado</td></tr>`;
+      html += `<tr><td colspan="7" style="padding:20px; text-align:center; font-style:italic;">Este corte histórico se realizó antes de activar el registro de alimentos desglosado</td></tr>`;
     } else {
       ventas.forEach(v => {
         let platillosStr = "";
@@ -59,12 +78,16 @@ export default function HistorialCortes() {
           platillosStr = listaItems.map(p => `• ${p.cantidad}x ${p.nombre} ($${(p.precio * p.cantidad).toFixed(2)})`).join('<br/>');
         }
 
+        const propinaRow = (parseFloat(v.propina_efectivo || 0) + parseFloat(v.propina_tarjeta || 0)) || 0;
+
         html += `
           <tr>
-            <td style="text-align:center; padding:10px; font-weight:bold;">${v.numMesa || 'Barra'}</td>
+            <td style="text-align:center; padding:10px; font-weight:bold;">${v.num_mesa || 'Barra'}</td>
+            <td style="text-align:center; padding:10px;">${v.mesero || 'Mesero'}</td>
             <td style="padding:10px;">${v.cliente || 'General'}</td>
             <td style="text-align:center; padding:10px;">${v.personas || 1}</td>
             <td style="padding:10px; font-size:11px; color:#334155;">${platillosStr || 'Venta directa en mostrador'}</td>
+            <td style="text-align:right; padding:10px; color:#b45309;">$${propinaRow.toFixed(2)}</td>
             <td style="text-align:right; padding:10px; font-weight:bold; color:#16a34a;">$${parseFloat(v.total || 0).toFixed(2)}</td>
           </tr>
         `;
@@ -74,13 +97,36 @@ export default function HistorialCortes() {
     html += `
         </tbody>
         <tfoot>
-          <tr><td colspan="5"></td></tr>
-          <tr style="background:#f1f5f9; font-size:13px;">
-            <td colspan="3"></td>
-            <td style="text-align:right; font-weight:bold; padding:10px;">TOTAL AUDITADO EN TURNO:</td>
-            <td style="text-align:right; font-weight:bold; color:#15803d; padding:10px; font-size:15px;">
-              $${parseFloat(corteSeleccionado.total_ventas || 0).toFixed(2)}
-            </td>
+          <tr><td colspan="7"></td></tr>
+          
+          <tr>
+            <td colspan="5" rowspan="3" style="vertical-align: middle; text-align: center; padding: 8px; background:#f1f5f9;"><b>RESUMEN FINANCIERO HISTÓRICO</b></td>
+            <td style="font-weight:bold; text-align:right; background:#f8fafc;">Ventas Efectivo:</td>
+            <td style="text-align:right; background:#f8fafc;">$${historiEfectivoVentas.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="font-weight:bold; text-align:right; background:#f8fafc;">Ventas Tarjeta:</td>
+            <td style="text-align:right; background:#f8fafc;">$${historiTarjetaVentas.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="font-weight:bold; text-align:right; background:#e2e8f0; color:#1e293b;">TOTAL VENTAS:</td>
+            <td style="font-weight:bold; text-align:right; background:#e2e8f0; color:#15803d;">$${parseFloat(corteSeleccionado.total_ventas || 0).toFixed(2)}</td>
+          </tr>
+
+          <tr><td colspan="7"></td></tr>
+
+          <tr>
+            <td colspan="5" rowspan="3" style="vertical-align: middle; text-align: center; padding: 8px; background:#fffbeb;"><b>DESGLOSE DE PROPINAS DEL TURNO</b></td>
+            <td style="font-weight:bold; text-align:right; background:#fffbeb; color:#b45309;">Propinas Efectivo:</td>
+            <td style="text-align:right; background:#fffbeb; color:#b45309;">$${historiEfectivoPropinas.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="font-weight:bold; text-align:right; background:#fffbeb; color:#b45309;">Propinas Tarjeta:</td>
+            <td style="text-align:right; background:#fffbeb; color:#b45309;">$${historiTarjetaPropinas.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="font-weight:bold; text-align:right; background:#fef3c7; color:#92400e;">TOTAL PROPINAS:</td>
+            <td style="font-weight:bold; text-align:right; background:#fef3c7; color:#b45309;">$${(historiEfectivoPropinas + historiTarjetaPropinas).toFixed(2)}</td>
           </tr>
         </tfoot>
       </table>
@@ -114,7 +160,6 @@ export default function HistorialCortes() {
   return (
     <div className="animate-fade-in font-sans select-none">
       
-      {/* BLOQUE DE BÚSQUEDA */}
       <div className="bg-[#0b1120] border border-slate-800 rounded-2xl p-5 mb-8 flex flex-wrap gap-4 items-end shadow-lg">
         <div className="w-48">
           <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Buscar por Folio</label>
@@ -131,7 +176,6 @@ export default function HistorialCortes() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         
-        {/* TABLA HISTÓRICA */}
         <div className="xl:col-span-2 bg-[#0b1120] border border-slate-800 rounded-2xl overflow-hidden shadow-xl h-fit">
           <table className="w-full text-left border-collapse font-sans text-xs">
             <thead>
@@ -163,13 +207,11 @@ export default function HistorialCortes() {
           </table>
         </div>
 
-        {/* DETALLE FINANCIERO PREMIUM */}
         <div className="bg-[#0b1120] border border-slate-800 rounded-2xl shadow-xl h-fit overflow-hidden">
           {corteSeleccionado && (
             <div className="bg-slate-950 border-b border-slate-800 p-4 flex justify-between items-center">
               <span className="text-xs font-bold text-slate-400">Auditoría Seleccionada</span>
               
-              {/* 🔥 BOTONERA DOBLE EN PANTALLA 🔥 */}
               <div className="flex gap-2">
                 <button 
                   onClick={exportarExcelAuditoria} 
@@ -184,7 +226,7 @@ export default function HistorialCortes() {
 
           <div className="p-6">
             {corteSeleccionado ? (
-              <div id="reporte-pdf-container" className="space-y-6 p-4 bg-[#0f172a]">
+              <div id="reporte-pdf-container" className="space-y-6 p-4 bg-[#0f172a] rounded-xl">
                 <div className="border-b border-slate-800 pb-3 flex justify-between items-start">
                   <div>
                     <span className="text-[10px] bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 px-2 py-0.5 rounded font-bold font-mono">{corteSeleccionado.folio}</span>
@@ -204,10 +246,24 @@ export default function HistorialCortes() {
                   <div className="pt-2"><p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Gasto x Pax</p><p className="text-sm font-black text-indigo-400 mt-0.5 font-mono">${parseFloat(corteSeleccionado.promedio_por_persona || 0).toFixed(1)}</p></div>
                 </div>
 
-                <div className="flex justify-between text-[11px] text-slate-500 border-t border-slate-800 pt-4 font-mono">
+                <div className="border-t border-slate-800 pt-4 font-mono space-y-3">
+                  <div className="space-y-1">
+                     <p className="text-[9px] font-sans font-black uppercase text-indigo-400 tracking-widest">Ingresos del Negocio</p>
+                     <div className="flex justify-between text-[11px] text-slate-400 pl-2"><span>Ventas 💵 Efectivo:</span><span>${historiEfectivoVentas.toFixed(2)}</span></div>
+                     <div className="flex justify-between text-[11px] text-slate-400 pl-2"><span>Ventas 💳 Tarjeta:</span><span>${historiTarjetaVentas.toFixed(2)}</span></div>
+                  </div>
+                  <div className="space-y-1">
+                     <p className="text-[9px] font-sans font-black uppercase text-amber-500 tracking-widest mt-2 border-t border-dashed border-slate-700 pt-2">Propinas (Meseros)</p>
+                     <div className="flex justify-between text-[11px] text-slate-400 pl-2"><span>Propinas 💵 Efectivo:</span><span>${historiEfectivoPropinas.toFixed(2)}</span></div>
+                     <div className="flex justify-between text-[11px] text-slate-400 pl-2"><span>Propinas 💳 Tarjeta:</span><span>${historiTarjetaPropinas.toFixed(2)}</span></div>
+                  </div>
+                </div>
+
+                <div className="flex justify-between text-[10px] text-slate-500 border-t border-slate-800 pt-3 font-mono">
                   <span>Base Imponible: ${parseFloat(corteSeleccionado.subtotal).toFixed(2)}</span>
                   <span>IVA Trasladado: ${parseFloat(corteSeleccionado.iva).toFixed(2)}</span>
                 </div>
+
               </div>
             ) : (
               <div className="h-64 flex flex-col items-center justify-center text-center text-slate-600 italic">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function Sidebar({ vistaActual, setVistaActual, usuario, socketConectado, onLogout }) {
+export default function Sidebar({ vistaActual, setVistaActual, usuario, socketConectado, onLogout, onReconectar }) {
   const [colapsadoManual, setColapsadoManual] = useState(false);
   const [anchoVentana, setAnchoVentana] = useState(window.innerWidth);
 
@@ -16,26 +16,27 @@ export default function Sidebar({ vistaActual, setVistaActual, usuario, socketCo
     {
       seccion: 'Operación en Vivo',
       items: [
-        { id: 'tablero', icono: '🍽️', nombre: 'Salón & Mesas', rol: ['Gerente', 'Hostess'] },
-        { id: 'calendario', icono: '📅', nombre: 'Calendario Reservas', rol: ['Gerente', 'Hostess'] }, 
-        { id: 'pos', icono: '🖥️', nombre: 'Punto de Venta', rol: ['Gerente', 'Mesero'] },
-        { id: 'cocina', icono: '🔥', nombre: 'KDS Cocina', rol: ['Gerente', 'Cocinero'] },
+        { id: 'tablero', icono: '🍽️', nombre: 'Salón & Mesas', rol: ['Gerente', 'Subgerente', 'Hostess'] },
+        { id: 'calendario', icono: '📅', nombre: 'Calendario Reservas', rol: ['Gerente', 'Subgerente', 'Hostess'] }, 
+        { id: 'pos', icono: '🖥️', nombre: 'Punto de Venta', rol: ['Gerente', 'Subgerente', 'Mesero', 'Cantinero'] },
+        { id: 'cocina', icono: '🔥', nombre: 'KDS Cocina', rol: ['Gerente', 'Subgerente', 'Cocinero'] },
+        { id: 'barra', icono: '🍸', nombre: 'KDS Barra', rol: ['Gerente', 'Subgerente', 'Cantinero'] },
       ]
     },
     {
       seccion: 'Logística & Recetas',
       items: [
-        { id: 'gestion_menu', icono: '🍷', nombre: 'Editor Menú', rol: ['Gerente'] },
-        { id: 'inventario', icono: '📦', nombre: 'Almacén', rol: ['Gerente'] },
+        { id: 'gestion_menu', icono: '🍷', nombre: 'Editor Menú', rol: ['Gerente', 'Subgerente'] },
+        { id: 'inventario', icono: '📦', nombre: 'Almacén', rol: ['Gerente', 'Subgerente'] },
       ]
     },
     {
       seccion: 'Administración',
       items: [
-        { id: 'dashboard', icono: '📊', nombre: 'Finanzas & Cortes', rol: ['Gerente'] }, // <-- AHORA ENGLOBA TODO
-        { id: 'control_mesas', icono: '🪑', nombre: 'Control de Mesas', rol: ['Gerente'] },
-        { id: 'usuarios', icono: '🔑', nombre: 'Personal', rol: ['Gerente'] },
-        { id: 'config_negocio', icono: '⚙️', nombre: 'Ajustes', rol: ['Gerente'] },
+        { id: 'dashboard', icono: '📊', nombre: 'Finanzas & Cortes', rol: ['Gerente', 'Subgerente'] },
+        { id: 'control_mesas', icono: '🪑', nombre: 'Control de Mesas', rol: ['Gerente', 'Subgerente'] },
+        { id: 'usuarios', icono: '🔑', nombre: 'Personal', rol: ['Gerente', 'Subgerente'] },
+        { id: 'config_negocio', icono: '⚙️', nombre: 'Ajustes', rol: ['Gerente', 'Subgerente'] },
       ]
     }
   ];
@@ -71,10 +72,21 @@ export default function Sidebar({ vistaActual, setVistaActual, usuario, socketCo
               </div>
             )}
             {colapsado && gIdx > 0 && <div className="w-6 mx-auto border-t border-slate-800/80 my-2"></div>}
+            
             {grupo.items.map(item => {
               const activo = vistaActual === item.id;
+              
+              const clasesActivo = item.id === 'barra' 
+                ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-600/30 translate-x-1' 
+                : 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 translate-x-1';
+
               return (
-                <button key={item.id} onClick={() => setVistaActual(item.id)} className={`w-full flex items-center gap-3.5 px-3.5 py-3 rounded-2xl font-sans text-xs font-bold transition-all cursor-pointer group ${activo ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 translate-x-1' : 'text-slate-400 hover:bg-slate-900/60 hover:text-slate-200'}`} title={item.nombre}>
+                <button 
+                  key={item.id} 
+                  onClick={() => setVistaActual(item.id)} 
+                  className={`w-full flex items-center gap-3.5 px-3.5 py-3 rounded-2xl font-sans text-xs font-bold transition-all cursor-pointer group ${activo ? clasesActivo : 'text-slate-400 hover:bg-slate-900/60 hover:text-slate-200'}`} 
+                  title={item.nombre}
+                >
                   <span className="text-xl shrink-0 group-hover:scale-110 transition-transform">{item.icono}</span>
                   {!colapsado && <span className="truncate text-left leading-tight shrink-0">{item.nombre}</span>}
                 </button>
@@ -85,15 +97,26 @@ export default function Sidebar({ vistaActual, setVistaActual, usuario, socketCo
       </div>
 
       <div className={`p-3 border-t border-slate-900 bg-slate-950/90 flex gap-2 shrink-0 ${colapsado ? 'flex-col items-center' : 'flex-row items-center justify-between'}`}>
-        <div className={`flex items-center justify-center gap-2 rounded-xl border transition-all ${colapsado ? 'w-11 h-11 p-0' : 'flex-1 px-3 py-2.5'} ${socketConectado ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
+        
+        <button 
+          onClick={!socketConectado ? onReconectar : undefined}
+          disabled={socketConectado}
+          title={!socketConectado ? "Clic para forzar reconexión al servidor" : "Conexión estable"}
+          className={`flex items-center justify-center gap-2 rounded-xl border transition-all ${colapsado ? 'w-11 h-11 p-0' : 'flex-1 px-3 py-2.5'} ${
+            socketConectado 
+              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 cursor-default' 
+              : 'bg-rose-500/10 border-rose-500/20 text-rose-400 hover:bg-rose-500/20 hover:border-rose-500/40 cursor-pointer active:scale-95'
+          }`}
+        >
           <span className="relative flex h-2.5 w-2.5 shrink-0">
             <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${socketConectado ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>
             <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${socketConectado ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
           </span>
-          {!colapsado && <span className="text-xs font-mono font-bold truncate">{socketConectado ? 'En línea' : 'Desconectado'}</span>}
-        </div>
+          {!colapsado && <span className="text-xs font-mono font-bold truncate">{socketConectado ? 'En línea' : 'Desconectado ↻'}</span>}
+        </button>
+
         <button onClick={onLogout} className={`flex items-center justify-center gap-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl font-bold text-xs transition-colors cursor-pointer active:scale-95 shrink-0 ${colapsado ? 'w-11 h-11 p-0' : 'px-3.5 py-2.5'}`}>
-          <span className="text-lg shrink-0 leading-none">🚪</span>
+          <span className="text-lg shrink-0 leaping-none">🚪</span>
           {!colapsado && <span className="truncate">Salir</span>}
         </button>
       </div>

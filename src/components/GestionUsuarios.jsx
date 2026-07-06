@@ -13,7 +13,9 @@ export default function GestionUsuarios({ usuarioLogueado }) {
   });
 
   const BASE_URL = `http://${window.location.hostname}:3000/api`;
-  const rolesDisponibles = ['Gerente', 'Subgerente', 'Hostess', 'Mesero', 'Cocinero'];
+  
+  // 🔥 AQUÍ SE INYECTA EL ROL DE CANTINERO 🔥
+  const rolesDisponibles = ['Gerente', 'Subgerente', 'Hostess', 'Mesero', 'Cocinero', 'Cantinero'];
 
   const cargarUsuarios = async () => {
     try {
@@ -191,7 +193,6 @@ export default function GestionUsuarios({ usuarioLogueado }) {
                 placeholder="Ej. 4821"
                 value={form.pin}
                 onChange={e => {
-                  // FILTRO INSTANTÁNEO: Destruye cualquier letra o símbolo al vuelo
                   const soloNumeros = e.target.value.replace(/\D/g, '');
                   setForm({ ...form, pin: soloNumeros });
                 }}
@@ -268,7 +269,7 @@ export default function GestionUsuarios({ usuarioLogueado }) {
                           className="text-slate-500 hover:text-slate-300 text-xs cursor-pointer p-1"
                           title={pinRevelado ? 'Ocultar PIN' : 'Revelar PIN'}
                         >
-                          {pinRevelado ? '🙈' : '👁️'}
+                          {pinRevelado ? '❎' : '👁️'}
                         </button>
                       </div>
                     </div>

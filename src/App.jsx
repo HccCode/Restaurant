@@ -27,9 +27,10 @@ export default function App() {
   const [reservaParaAsignarMesa, setReservaParaAsignarMesa] = useState(null);
   const [datosCorteZ, setDatosCorteZ] = useState(null);
   const [socketConectado, setSocketConectado] = useState(false);
+  
   const [alertaSistema, setAlertaSistema] = useState(null);
+  const [modalConfirmacion, setModalConfirmacion] = useState({ isOpen: false, titulo: '', mensaje: '', accion: null });
 
-  // 🔥 MOTOR DE FECHA LOCAL MEXICALI (Erradica el brinco de las 5:00 PM en UTC-7) 🔥
   const obtenerFechaLocal = () => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -78,6 +79,32 @@ export default function App() {
     return () => socket.off();
   }, []);
 
+  // =========================================================================================
+  // 🔥 LÓGICA DE RECONEXIÓN MEJORADA Y AGRESIVA 🔥
+  // =========================================================================================
+  const handleReconectarServidor = () => {
+    // 1. Damos retroalimentación visual al usuario para que no presione mil veces
+    setAlertaSistema({ 
+      titulo: 'Reconectando...', 
+      mensaje: 'Forzando la comunicación con el servidor local...', 
+      icono: '📡', 
+      color: 'text-amber-500' 
+    });
+
+    // 2. Destruimos la conexión actual para resetear el temporizador de Socket.IO
+    socket.disconnect();
+    
+    // 3. Esperamos medio segundo y lanzamos la conexión en limpio
+    setTimeout(() => {
+      socket.connect();
+      sincronizarTodoElSalon();
+      
+      // Cerramos la ventana de alerta poco después
+      setTimeout(() => setAlertaSistema(null), 1500);
+    }, 500);
+  };
+  // =========================================================================================
+
   const limpiarFecha = (str) => {
     if (!str) return '';
     const match = String(str).match(/(\d{4})[-/]?(\d{1,2})[-/]?(\d{1,2})/);
@@ -102,26 +129,21 @@ export default function App() {
     .filter(r => r.estado === 'en-curso' && r.numMesa)
     .map(r => ({ num: String(r.numMesa).trim(), nombre: r.nombre }));
 
-  // =========================================================================
-  // 🔥 ENRUTADOR INTELIGENTE DE VISTA INICIAL POR ROL 🔥
-  // =========================================================================
   const obtenerVistaInicial = (rolUsuario) => {
     const rol = String(rolUsuario || '').toLowerCase().trim();
-
-    if (rol.includes('cocin'))   return 'cocina';       // Cocinero / Chef -> Cocina
-    if (rol.includes('host'))    return 'tablero';      // Hostess -> Mapa de Reservas
-    if (rol.includes('meser'))   return 'pos';          // Mesero -> Punto de Venta
-    if (rol.includes('cajer'))   return 'pos';          // Cajero -> Punto de Venta
-    if (rol.includes('almacen')) return 'inventario';   // Almacenista -> Bodega
-
-    return 'dashboard'; // Gerente, Dueño o Admin -> Finanzas
+    if (rol.includes('cocin'))   return 'cocina';       
+    if (rol.includes('barra') || rol.includes('cantin')) return 'barra'; 
+    if (rol.includes('host'))    return 'tablero';      
+    if (rol.includes('meser'))   return 'pos';          
+    if (rol.includes('cajer'))   return 'pos';          
+    if (rol.includes('almacen')) return 'inventario';   
+    return 'dashboard'; 
   };
 
   const handleLogin = (u) => { 
     setUsuario(u); 
     setVistaActiva(obtenerVistaInicial(u.rol)); 
   };
-  // =========================================================================
 
   const handleActualizarComandas = (nuevoEstado) => {
     setComandas(prev => {
@@ -136,24 +158,99 @@ export default function App() {
   };
 
   const handleMandarCocina = async (mesaObj, platillosEnCuenta) => {
+    const categoriasDeBarra = ['Bebidas', 'Coctelería', 'Cervezas', 'Licores'];
+    
     const items = platillosEnCuenta.filter(p => p.cantidad > (p.enviado || 0)).map(p => ({
-      nombre: p.nombre, cantidad: p.cantidad - (p.enviado || 0), comentario: p.comentario || ''
+      nombre: p.nombre, cantidad: p.cantidad - (p.enviado || 0), comentario: p.comentario || '', categoria: p.categoria 
     }));
+    
     if (items.length === 0) return setAlertaSistema({ titulo: 'Aviso', mensaje: 'No hay platillos nuevos por marchar.', icono: '⚠️', color: 'text-amber-500' });
+    
+    const itemsBarra = items.filter(p => categoriasDeBarra.includes(p.categoria));
+    const itemsCocina = items.filter(p => !categoriasDeBarra.includes(p.categoria));
+
     try {
-      const res = await fetch(`${BASE_URL}/cocina`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ numMesa: mesaObj.numMesa, platillos: items })
-      });
-      if (res.ok) {
-        const nuevosPlatillos = platillosEnCuenta.map(p => ({ ...p, enviado: p.cantidad }));
-        handleActualizarComandas(prev => ({ ...prev, [mesaObj.id]: nuevosPlatillos }));
-        setAlertaSistema({ titulo: '¡Enviada!', mensaje: 'Orden marchada a cocina.', icono: '🔥', color: 'text-orange-500' });
+      if (itemsBarra.length > 0) {
+        await fetch(`${BASE_URL}/cocina`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ numMesa: mesaObj.numMesa, platillos: itemsBarra })
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
-    } catch (e) { console.error(e); }
+
+      if (itemsCocina.length > 0) {
+        await fetch(`${BASE_URL}/cocina`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ numMesa: mesaObj.numMesa, platillos: itemsCocina })
+        });
+      }
+
+      const nuevosPlatillos = platillosEnCuenta.map(p => ({ ...p, enviado: p.cantidad }));
+      handleActualizarComandas(prev => ({ ...prev, [mesaObj.id]: nuevosPlatillos }));
+      setAlertaSistema({ titulo: '¡Enviada!', mensaje: 'Orden dividida y enrutada a sus estaciones correspondientes.', icono: '🔥', color: 'text-orange-500' });
+      
+    } catch (e) { 
+      console.error(e); 
+    }
   };
 
   const handleCompletarPedidoCocina = async (id) => {
-    try { await fetch(`${BASE_URL}/cocina/${id}/completar`, { method: 'PUT' }); } catch (e) {}
+    try { 
+      await fetch(`${BASE_URL}/cocina/${id}/completar`, { method: 'PUT' }); 
+      sincronizarTodoElSalon(); 
+    } catch (e) {}
+  };
+
+  const handleRechazarItemCocina = (pedidoId, itemRechazado, numMesa) => {
+    setModalConfirmacion({
+      isOpen: true,
+      titulo: 'Confirmar "86" (Agotado)',
+      mensaje: `¿Deseas eliminar ${itemRechazado.cantidad}x ${itemRechazado.nombre}? Al aceptar, se descontará automáticamente de la cuenta de la mesa y NO se notificará al salón que está listo.`,
+      accion: async () => {
+        setModalConfirmacion({ isOpen: false, titulo: '', mensaje: '', accion: null }); 
+        
+        try {
+          const reserva = reservacionesLimpias.find(r => String(r.numMesa).trim() === String(numMesa).trim());
+          if (reserva) {
+            const cuentaActual = [...(comandas[reserva.id] || [])];
+            const indexEnCuenta = cuentaActual.findIndex(p => p.nombre === itemRechazado.nombre && (p.comentario || '') === (itemRechazado.comentario || ''));
+            
+            if (indexEnCuenta >= 0) {
+              cuentaActual[indexEnCuenta].cantidad -= itemRechazado.cantidad;
+              cuentaActual[indexEnCuenta].enviado -= itemRechazado.cantidad;
+              if (cuentaActual[indexEnCuenta].cantidad <= 0) cuentaActual.splice(indexEnCuenta, 1);
+              
+              await fetch(`${BASE_URL}/comandas/${reserva.id}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ platillos: cuentaActual })
+              });
+            }
+          }
+
+          const pedidoActual = pedidosCocina.find(p => p.id === pedidoId);
+          if (pedidoActual) {
+            const nuevosPlatillos = [...pedidoActual.platillos];
+            const idxReal = nuevosPlatillos.findIndex(p => p.nombre === itemRechazado.nombre && p.cantidad === itemRechazado.cantidad);
+            if (idxReal >= 0) nuevosPlatillos.splice(idxReal, 1);
+
+            await fetch(`${BASE_URL}/cocina/${pedidoId}`, {
+              method: 'PUT', 
+              headers: { 'Content-Type': 'application/json' }, 
+              body: JSON.stringify({ 
+                ...pedidoActual, 
+                platillos: nuevosPlatillos,
+                estado: nuevosPlatillos.length === 0 ? 'cancelado' : pedidoActual.estado 
+              })
+            });
+          }
+
+          setAlertaSistema({ titulo: 'Platillo Cancelado (86)', mensaje: `Se eliminó "${itemRechazado.nombre}" del ticket y se descontó de la cuenta.`, icono: '❌', color: 'text-rose-500' });
+          sincronizarTodoElSalon();
+
+        } catch (e) {
+          console.error(e);
+          alert('Error de red al rechazar el platillo.');
+        }
+      }
+    });
   };
 
   const handleDespacharPlatoSalon = (idNotificacion) => {
@@ -203,9 +300,19 @@ export default function App() {
     } catch (e) { console.error('Error al mover reserva:', e); }
   };
 
-  const handleEliminarReserva = async (id) => {
-    if (!window.confirm('¿Estás seguro de eliminar este registro?')) return;
-    try { await fetch(`${BASE_URL}/reservaciones/${id}`, { method: 'DELETE' }); sincronizarTodoElSalon(); } catch (e) { console.error(e); }
+  const handleEliminarReserva = (id) => {
+    setModalConfirmacion({
+      isOpen: true,
+      titulo: 'Confirmar Eliminación',
+      mensaje: '¿Estás seguro de eliminar este registro del salón?',
+      accion: async () => {
+        setModalConfirmacion({ isOpen: false, titulo: '', mensaje: '', accion: null });
+        try { 
+          await fetch(`${BASE_URL}/reservaciones/${id}`, { method: 'DELETE' }); 
+          sincronizarTodoElSalon(); 
+        } catch (e) { console.error(e); }
+      }
+    });
   };
 
   if (!usuario) return <Login onLogin={handleLogin} />;
@@ -222,34 +329,16 @@ export default function App() {
                  comandas={comandas} 
                  setComandas={handleActualizarComandas} 
                  usuario={usuario} 
-                 
-                 // =====================================================================
-                 // 🔥 ADUANA VISUAL: ABORTA EL COBRO SI LA COCINA SIGUE TRABAJANDO 🔥
-                 // =====================================================================
                  onCobrar={async (idReservaPagada) => {
                    const reserva = reservacionesLimpias.find(r => r.id === idReservaPagada);
                    const mesaTarget = String(reserva?.numMesa || '').trim().toLowerCase();
-
-                   const cocinaTrabajando = pedidosCocina.some(p => 
-                     String(p.numMesa || '').trim().toLowerCase() === mesaTarget && p.estado === 'pendiente'
-                   );
-
+                   const cocinaTrabajando = pedidosCocina.some(p => String(p.numMesa || '').trim().toLowerCase() === mesaTarget && p.estado === 'pendiente');
                    if (cocinaTrabajando) {
-                     return setAlertaSistema({
-                       titulo: 'Mesa en Proceso',
-                       mensaje: `La Mesa ${reserva?.numMesa} tiene platillos preparándose en cocina. No puedes cobrar hasta que el chef los marque como terminados.`,
-                       icono: '⏳',
-                       color: 'text-rose-500'
-                     });
+                     return setAlertaSistema({ titulo: 'Mesa en Proceso', mensaje: `La Mesa ${reserva?.numMesa} tiene platillos preparándose en cocina. No puedes cobrar hasta que el chef los marque como terminados.`, icono: '⏳', color: 'text-rose-500' });
                    }
-
-                   try {
-                     await fetch(`${BASE_URL}/reservaciones/${idReservaPagada}`, { method: 'DELETE' });
-                   } catch (e) { console.error('No se pudo limpiar la reserva:', e); }
+                   try { await fetch(`${BASE_URL}/reservaciones/${idReservaPagada}`, { method: 'DELETE' }); } catch (e) {}
                    sincronizarTodoElSalon();
                  }} 
-                 // =====================================================================
-                 
                  onEnviarCocina={handleMandarCocina}
                  notificacionesCocina={notificacionesCocina} 
                  onDespacharPlato={handleDespacharPlatoSalon}
@@ -265,13 +354,46 @@ export default function App() {
       case "inventario": return <Inventario usuario={usuario} />;
       case "usuarios": return <GestionUsuarios usuarioLogueado={usuario} />;
       case "config_negocio": return <ConfigRestaurante />;
-      case "cocina": return <Cocina pedidos={pedidosCocina} onCompletar={handleCompletarPedidoCocina} />;
+      
+      case "cocina": return <Cocina pedidos={pedidosCocina} onCompletar={handleCompletarPedidoCocina} onRechazarItem={handleRechazarItemCocina} estacion="Cocina" />;
+      case "barra": return <Cocina pedidos={pedidosCocina} onCompletar={handleCompletarPedidoCocina} onRechazarItem={handleRechazarItemCocina} estacion="Barra" />;
+      
       default: return <div className="p-12 text-center text-slate-500">Módulo en construcción...</div>;
     }
   };
 
   return (
     <div className="flex h-screen w-full bg-[#070b16] text-slate-200 font-sans overflow-hidden select-none">
+      
+      {modalConfirmacion.isOpen && (
+        <div className="fixed inset-0 z-[500] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#0b1120] border border-rose-900/50 rounded-3xl p-6 md:p-8 max-w-sm w-full shadow-[0_0_50px_rgba(225,29,72,0.15)] relative flex flex-col text-center overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-rose-600"></div>
+            
+            <div className="text-5xl mb-4 animate-bounce">🗑️</div>
+            <h2 className="text-lg font-black text-white uppercase tracking-wider mb-2">{modalConfirmacion.titulo}</h2>
+            <p className="text-xs text-rose-200/80 mb-8 leading-relaxed px-2">
+              {modalConfirmacion.mensaje}
+            </p>
+            
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setModalConfirmacion({ isOpen: false, titulo: '', mensaje: '', accion: null })} 
+                className="flex-1 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl uppercase tracking-widest text-[10px] transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={modalConfirmacion.accion} 
+                className="flex-1 py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-xl uppercase tracking-widest text-[10px] shadow-lg shadow-rose-600/20 transition-transform active:scale-95 cursor-pointer"
+              >
+                Aceptar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {alertaSistema && (
         <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl p-8 max-w-sm w-full text-center shadow-2xl">
@@ -283,7 +405,14 @@ export default function App() {
         </div>
       )}
 
-      <Sidebar vistaActual={vistaActiva} setVistaActual={setVistaActiva} usuario={usuario} socketConectado={socketConectado} onLogout={() => setUsuario(null)} />
+      <Sidebar 
+        vistaActual={vistaActiva} 
+        setVistaActual={setVistaActiva} 
+        usuario={usuario} 
+        socketConectado={socketConectado} 
+        onLogout={() => setUsuario(null)} 
+        onReconectar={handleReconectarServidor}
+      />
       
       <main className="flex-1 flex flex-col h-full relative overflow-y-auto bg-[#070b16]">
         {renderizarVista()}

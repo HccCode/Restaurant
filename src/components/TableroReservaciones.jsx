@@ -227,7 +227,7 @@ export default function TableroReservaciones({ reservaciones = [], onNuevaReserv
         </div>
       </div>
 
-      {/* COLUMNA DERECHA: MAPA DE OCUPACIÓN EN VIVO (CON PRIORIDADES APLICADAS) */}
+      {/* COLUMNA DERECHA: MAPA DE OCUPACIÓN EN VIVO */}
       <div className="w-full xl:w-80 bg-[#0a0f1d] border border-slate-800/80 rounded-2xl p-4 flex flex-col h-fit xl:h-full shrink-0">
         <div className="border-b border-slate-800 pb-2 mb-4 flex justify-between items-center">
           <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Layout Jerárquico</h3>
@@ -236,12 +236,10 @@ export default function TableroReservaciones({ reservaciones = [], onNuevaReserv
 
         <div className="flex-1 overflow-y-auto space-y-6 pr-1 scrollbar-thin scrollbar-thumb-slate-800 pb-20">
           
-          {/* 🔥 ITERAMOS SOBRE LAS ZONAS YA ORDENADAS POR PRIORIDAD 🔥 */}
           {zonasUnicasOrdenadas.map(zona => {
             const mesasDeLaZona = mesasLayout.filter(m => m.zona === zona);
             if (mesasDeLaZona.length === 0) return null;
 
-            // Extraemos la configuración visual (si no existe, aplicamos valores neutros)
             const configZona = prioridadesGlobales[zona] || { nivel: 99, icono: '📍', color: 'text-slate-300' };
 
             return (
@@ -316,8 +314,14 @@ function TarjetaReserva({ r, colId, mesasLayout = [], onEditarReserva, onElimina
           <span className="bg-slate-900 border border-slate-800 text-slate-400 text-[9px] px-1.5 py-0.5 rounded font-semibold">📍 {zonaReal}</span>
         )}
         
+        {/* 🔥 PÍLDORA DE MESA ASIGNADA CON BOTÓN PARA DESVINCULAR (✖) 🔥 */}
         {r.numMesa ? (
-          <span className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[9px] px-1.5 py-0.5 rounded font-black uppercase font-mono">🪑 Mesa {r.numMesa}</span>
+          <span className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[9px] px-1.5 py-0.5 rounded font-black uppercase font-mono flex items-center gap-1">
+            🪑 Mesa {r.numMesa}
+            {colId !== 'en-curso' && (
+              <button onClick={() => onMover(r.id, colId, '')} className="hover:text-rose-400 transition-colors ml-0.5 text-xs" title="Liberar mesa de este cliente">✖</button>
+            )}
+          </span>
         ) : colId === 'en-curso' ? (
           <button onClick={() => onAsignarMesa(r)} className="bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[9px] px-1.5 py-0.5 rounded font-black uppercase cursor-pointer animate-pulse">⚠️ Asignar Mesa</button>
         ) : null}
@@ -329,14 +333,18 @@ function TarjetaReserva({ r, colId, mesasLayout = [], onEditarReserva, onElimina
         <div className="flex gap-3 text-slate-500 items-center">
           <button onClick={() => onEditarReserva(r)} className="hover:text-white transition-all cursor-pointer text-base hover:scale-110" title="Editar">✏️</button>
           <button onClick={() => onEliminarReserva(r.id)} className="hover:text-rose-400 transition-all cursor-pointer text-base hover:scale-110" title="Eliminar">🗑️</button>
-          {!r.numMesa && colId !== 'en-curso' && (
-            <button onClick={() => onAsignarMesa(r)} className="hover:text-emerald-400 transition-all cursor-pointer text-base hover:scale-110" title="Vincular mesa">🪑</button>
+          
+          {/* 🔥 EL BOTÓN DE ASIGNAR (🪑) AHORA SIEMPRE ESTÁ VISIBLE EN ESPERA/PENDIENTES 🔥 */}
+          {colId !== 'en-curso' && (
+            <button onClick={() => onAsignarMesa(r)} className="hover:text-emerald-400 transition-all cursor-pointer text-base hover:scale-110" title={r.numMesa ? "Cambiar mesa asignada" : "Vincular mesa"}>🪑</button>
           )}
         </div>
 
         <div className="flex gap-1.5">
-          {colId === 'espera' && <button onClick={() => onMover(r.id, 'pendientes', r.numMesa)} className="w-6 h-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded flex items-center justify-center font-bold text-[10px] text-slate-400 hover:text-white cursor-pointer">◀</button>}
-          {colId === 'en-curso' && <button onClick={() => onMover(r.id, 'espera', r.numMesa)} className="w-6 h-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded flex items-center justify-center font-bold text-[10px] text-slate-400 hover:text-white cursor-pointer">◀</button>}
+          {/* 🔥 AL REGRESAR CON LAS FLECHAS, SE ENVÍA '' (VACÍO) PARA DESVINCULAR LA MESA EN LA BD 🔥 */}
+          {colId === 'espera' && <button onClick={() => onMover(r.id, 'pendientes', '')} className="w-6 h-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded flex items-center justify-center font-bold text-[10px] text-slate-400 hover:text-white cursor-pointer">◀</button>}
+          {colId === 'en-curso' && <button onClick={() => onMover(r.id, 'espera', '')} className="w-6 h-6 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded flex items-center justify-center font-bold text-[10px] text-slate-400 hover:text-white cursor-pointer">◀</button>}
+          
           {colId === 'pendientes' && <button onClick={() => onMover(r.id, 'espera', r.numMesa)} className="text-[9px] px-2 py-1 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 rounded font-bold uppercase cursor-pointer">A Espera ▶</button>}
           {colId === 'espera' && <button onClick={() => onMover(r.id, 'en-curso', r.numMesa)} className="text-[9px] px-2 py-1 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 rounded font-bold uppercase cursor-pointer">Sentar ▶</button>}
           {colId === 'en-curso' && <span className="text-slate-500 bg-slate-900 px-2 py-1 rounded select-none uppercase tracking-wider text-[8px]">En Salón</span>}

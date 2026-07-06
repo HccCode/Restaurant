@@ -58,9 +58,11 @@ async function inicializarBaseDeDatos() {
         precio NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
         imagen TEXT DEFAULT '',
         descripcion TEXT DEFAULT '',
-        orden INTEGER DEFAULT 0
+        orden INTEGER DEFAULT 0,
+        receta JSONB DEFAULT '[]'::jsonb
       );
       ALTER TABLE menu_restaurante ADD COLUMN IF NOT EXISTS orden INTEGER DEFAULT 0;
+      ALTER TABLE menu_restaurante ADD COLUMN IF NOT EXISTS receta JSONB DEFAULT '[]'::jsonb;
 
       CREATE TABLE IF NOT EXISTS mesas (
         id SERIAL PRIMARY KEY,
@@ -121,10 +123,22 @@ async function inicializarBaseDeDatos() {
         iva NUMERIC(10, 2) DEFAULT 0,
         total NUMERIC(10, 2) DEFAULT 0,
         corte_aplicado BOOLEAN DEFAULT false,
-        fecha_cobro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        fecha_cobro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        pago_efectivo NUMERIC(10, 2) DEFAULT 0,
+        pago_tarjeta NUMERIC(10, 2) DEFAULT 0,
+        propina_efectivo NUMERIC(10, 2) DEFAULT 0,
+        propina_tarjeta NUMERIC(10, 2) DEFAULT 0,
+        descuento NUMERIC(10, 2) DEFAULT 0
       );
       ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS cliente VARCHAR(150) DEFAULT 'General';
       ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS personas INTEGER DEFAULT 1;
+      ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS pago_efectivo NUMERIC(10, 2) DEFAULT 0;
+      ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS pago_tarjeta NUMERIC(10, 2) DEFAULT 0;
+      ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS propina_efectivo NUMERIC(10, 2) DEFAULT 0;
+      ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS propina_tarjeta NUMERIC(10, 2) DEFAULT 0;
+      
+      -- 🔥 COLUMNA DE DESCUENTO AÑADIDA 🔥
+      ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS descuento NUMERIC(10, 2) DEFAULT 0;
     `);
 
     const checkMesas = await pool.query("SELECT * FROM mesas LIMIT 1");
@@ -201,24 +215,47 @@ app.delete('/api/mesas/:id', async (req, res) => {
 app.get('/api/menu', async (req, res) => {
   try { const result = await pool.query('SELECT * FROM menu_restaurante ORDER BY orden ASC, id ASC'); res.json(result.rows); } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
 app.post('/api/menu', async (req, res) => {
-  try { const result = await pool.query('INSERT INTO menu_restaurante (nombre, categoria, precio, imagen, descripcion, orden) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *', [req.body.nombre, req.body.categoria || 'Platos Fuertes', req.body.precio || 0, req.body.imagen || '', req.body.descripcion || '', req.body.orden || 0]); io.emit('salon_actualizado'); res.status(201).json(result.rows[0]); } catch (err) { res.status(500).json({ error: err.message }); }
+  try { 
+    const recetaJSON = JSON.stringify(req.body.receta || []);
+    const result = await pool.query('INSERT INTO menu_restaurante (nombre, categoria, precio, imagen, descripcion, orden, receta) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [req.body.nombre, req.body.categoria || 'Platos Fuertes', req.body.precio || 0, req.body.imagen || '', req.body.descripcion || '', req.body.orden || 0, recetaJSON]); 
+    io.emit('salon_actualizado'); res.status(201).json(result.rows[0]); 
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
-app.put('/api/menu/:id', async (req, res) => {
-  try { const result = await pool.query('UPDATE menu_restaurante SET nombre=$1, categoria=$2, precio=$3, imagen=$4, descripcion=$5 WHERE id=$6 RETURNING *', [req.body.nombre, req.body.categoria, req.body.precio, req.body.imagen, req.body.descripcion, req.params.id]); io.emit('salon_actualizado'); res.json(result.rows[0]); } catch (err) { res.status(500).json({ error: err.message }); }
-});
-app.delete('/api/menu/:id', async (req, res) => {
-  try { await pool.query('DELETE FROM menu_restaurante WHERE id = $1', [req.params.id]); io.emit('salon_actualizado'); res.json({ message: 'Borrado' }); } catch (err) { res.status(500).json({ error: err.message }); }
-});
+
 app.put('/api/menu/reordenar', async (req, res) => {
   const { items } = req.body;
   if (!Array.isArray(items)) return res.status(400).json({ error: 'Lote equivocado' });
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    for (const item of items) await client.query('UPDATE menu_restaurante SET orden = $1 WHERE id = $2', [item.orden, item.id]);
-    await client.query('COMMIT'); res.json({ success: true });
-  } catch (error) { await client.query('ROLLBACK'); res.status(500).json({ error: 'Fallo' }); } finally { client.release(); }
+    for (const item of items) {
+      if(item && item.id != null && item.orden != null){
+        await client.query('UPDATE menu_restaurante SET orden = $1 WHERE id = $2', [item.orden, item.id]);
+      }
+    }
+    await client.query('COMMIT'); 
+    res.json({ success: true });
+  } catch (error) { 
+    await client.query('ROLLBACK'); 
+    console.error("Error SQL al reordenar: ", error);
+    res.status(500).json({ error: 'Fallo al reordenar el menú' }); 
+  } finally { 
+    client.release(); 
+  }
+});
+
+app.put('/api/menu/:id', async (req, res) => {
+  try { 
+    const recetaJSON = JSON.stringify(req.body.receta || []);
+    const result = await pool.query('UPDATE menu_restaurante SET nombre=$1, categoria=$2, precio=$3, imagen=$4, descripcion=$5, receta=$6 WHERE id=$7 RETURNING *', [req.body.nombre, req.body.categoria, req.body.precio, req.body.imagen, req.body.descripcion, recetaJSON, req.params.id]); 
+    io.emit('salon_actualizado'); res.json(result.rows[0]); 
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/menu/:id', async (req, res) => {
+  try { await pool.query('DELETE FROM menu_restaurante WHERE id = $1', [req.params.id]); io.emit('salon_actualizado'); res.json({ message: 'Borrado' }); } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/inventario', async (req, res) => {
@@ -322,45 +359,75 @@ app.get('/api/comandas', (req, res) => res.json(comandasActivas));
 app.post('/api/comandas/:idReserva', (req, res) => { comandasActivas[req.params.idReserva] = req.body.platillos || []; io.emit('salon_actualizado'); res.json({ success: true }); });
 
 app.get('/api/cocina', (req, res) => res.json(pedidosCocina.filter(p => p.estado === 'pendiente')));
-app.post('/api/cocina', (req, res) => { const nuevo = { id: Date.now(), numMesa: req.body.numMesa, platillos: req.body.platillos, estado: 'pendiente', hora: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }; pedidosCocina.push(nuevo); io.emit('salon_actualizado'); res.status(201).json(nuevo); });
-app.put('/api/cocina/:id/completar', (req, res) => { const p = pedidosCocina.find(x => x.id === parseInt(req.params.id)); if (p) { p.estado = 'completado'; io.emit('plato_despachado_kds', { ...p, horaCompletado: new Date().toLocaleTimeString() }); io.emit('salon_actualizado'); res.json(p); } else res.status(404).json({ error: 'No encontrado' }); });
 
+app.post('/api/cocina', (req, res) => { 
+  const nuevo = { id: Date.now(), numMesa: req.body.numMesa, platillos: req.body.platillos, estado: 'pendiente', hora: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }; 
+  pedidosCocina.push(nuevo); 
+  io.emit('salon_actualizado'); 
+  res.status(201).json(nuevo); 
+});
 
-// =========================================================================
-// 🔥 ENDPOINTS BANCARIOS Y DE AUDITORÍA
-// =========================================================================
+app.put('/api/cocina/:id/completar', (req, res) => { 
+  const p = pedidosCocina.find(x => x.id === parseInt(req.params.id)); 
+  if (p) { 
+    p.estado = 'completado'; 
+    io.emit('plato_despachado_kds', { ...p, horaCompletado: new Date().toLocaleTimeString() }); 
+    io.emit('salon_actualizado'); 
+    res.json(p); 
+  } else {
+    res.status(404).json({ error: 'No encontrado' }); 
+  }
+});
+
+app.put('/api/cocina/:id', (req, res) => {
+  const index = pedidosCocina.findIndex(x => x.id === parseInt(req.params.id));
+  if (index !== -1) {
+    pedidosCocina[index] = { ...pedidosCocina[index], ...req.body };
+    io.emit('salon_actualizado'); 
+    res.json(pedidosCocina[index]);
+  } else {
+    res.status(404).json({ error: 'Pedido no encontrado' });
+  }
+});
+
+app.delete('/api/cocina/:id', (req, res) => {
+  const index = pedidosCocina.findIndex(x => x.id === parseInt(req.params.id));
+  if (index !== -1) {
+    pedidosCocina.splice(index, 1);
+    io.emit('salon_actualizado');
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: 'Pedido no encontrado' });
+  }
+});
 
 app.post('/api/cobrar/:idReserva', async (req, res) => {
   const { idReserva } = req.params;
-  const { mesero, platillos, subtotal, iva, total, mesaNum, cliente, personas } = req.body;
+  const { mesero, platillos, subtotal, iva, total, mesaNum, cliente, personas, desglosePago, desglosePropina, descuento } = req.body;
 
-  // =========================================================================
-  // 🔥 REGLA DE BLINDAJE ANTIFRAUDE: COCINA DEBE CONFIRMAR DESPACHO 🔥
-  // =========================================================================
+  const pagoEfectivo = desglosePago?.efectivo || 0;
+  const pagoTarjeta = desglosePago?.tarjeta || 0;
+  const propEfectivo = desglosePropina?.efectivo || 0;
+  const propTarjeta = desglosePropina?.tarjeta || 0;
+  const descuentoTotal = parseFloat(descuento || 0);
+
   const mesaTarget = String(mesaNum || '').trim().toLowerCase();
 
-  // 1. ¿La cocina tiene órdenes en estatus 'pendiente' para esta mesa?
   const cocinaOcupada = pedidosCocina.some(p => 
     p.estado === 'pendiente' && 
     String(p.numMesa || '').trim().toLowerCase() === mesaTarget
   );
 
   if (cocinaOcupada) {
-    return res.status(400).json({ 
-      error: `⛔ COBRO BLOQUEADO: La cocina aún está preparando platillos para la Mesa ${mesaNum}.` 
-    });
+    return res.status(400).json({ error: `⛔ COBRO BLOQUEADO: La cocina aún está preparando platillos para la Mesa ${mesaNum}.` });
   }
 
-  // 2. ¿El mesero agregó platillos a la cuenta y olvidó presionar "Marchar a Cocina"?
   const cuentaMesa = comandasActivas[idReserva] || [];
   const itemsSinMarchar = cuentaMesa.some(item => (item.cantidad || 0) > (item.enviado || 0));
 
   if (itemsSinMarchar) {
-    return res.status(400).json({ 
-      error: `⛔ COBRO BLOQUEADO: Tienes platillos en la cuenta que no has enviado a marchar a cocina.` 
-    });
+    return res.status(400).json({ error: `⛔ COBRO BLOQUEADO: Tienes platillos en la cuenta que no has enviado a marchar a cocina.` });
   }
-  // =========================================================================
 
   const client = await pool.connect();
   try {
@@ -368,13 +435,40 @@ app.post('/api/cobrar/:idReserva', async (req, res) => {
     const folioRes = await client.query(`SELECT NEXTVAL('folio_ventas_seq') as num`);
     const folio = `V-${folioRes.rows[0].num}`;
 
+    // 🔥 INSERCIÓN CORREGIDA (Incluye Descuento en la Base de Datos) 🔥
     await client.query(`
-      INSERT INTO historial_ventas (folio, num_mesa, mesero, cliente, personas, items_consumidos, subtotal, iva, total) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [folio, mesaNum || 'Barra', mesero || 'Mesero', cliente || 'General', parseInt(personas) || 1, JSON.stringify(platillos || []), subtotal || 0, iva || 0, total || 0]);
+      INSERT INTO historial_ventas (
+        folio, num_mesa, mesero, cliente, personas, items_consumidos, subtotal, iva, total, 
+        pago_efectivo, pago_tarjeta, propina_efectivo, propina_tarjeta, descuento
+      ) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    `, [
+      folio, mesaNum || 'Barra', mesero || 'Mesero', cliente || 'General', parseInt(personas) || 1, 
+      JSON.stringify(platillos || []), subtotal || 0, iva || 0, total || 0,
+      pagoEfectivo, pagoTarjeta, propEfectivo, propTarjeta, descuentoTotal
+    ]);
 
     await client.query('UPDATE reservaciones SET estado = $1 WHERE id = $2', ['finalizadas', idReserva]);
     delete comandasActivas[idReserva];
+
+    // MOTOR DE ESCANDALLOS: DESCUENTA INVENTARIO AUTOMÁTICAMENTE
+    for (const platoComprado of (platillos || [])) {
+      const dbMenu = await client.query('SELECT receta FROM menu_restaurante WHERE nombre = $1 LIMIT 1', [platoComprado.nombre]);
+      
+      if (dbMenu.rows.length > 0 && dbMenu.rows[0].receta) {
+        const receta = dbMenu.rows[0].receta; 
+        
+        for (const ingrediente of receta) {
+          const cantidadADescontar = parseFloat(ingrediente.cantidad) * parseInt(platoComprado.cantidad);
+          
+          await client.query(`
+            UPDATE inventario 
+            SET cantidad = cantidad - $1 
+            WHERE id = $2
+          `, [cantidadADescontar, ingrediente.id_ingrediente]);
+        }
+      }
+    }
 
     await client.query('COMMIT'); 
     io.emit('salon_actualizado'); 
@@ -395,6 +489,11 @@ app.get('/api/cortes/preview', async (req, res) => {
         COALESCE(cliente, 'General') AS cliente, 
         COALESCE(personas, 1) AS personas, 
         total,
+        pago_efectivo,
+        pago_tarjeta,
+        propina_efectivo,
+        propina_tarjeta,
+        descuento,
         items_consumidos
       FROM historial_ventas 
       WHERE DATE(fecha_cobro) = CURRENT_DATE 
@@ -404,7 +503,7 @@ app.get('/api/cortes/preview', async (req, res) => {
     const now = new Date();
     const folioTurno = `TURNO-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
     const granTotal = result.rows.reduce((acc, row) => acc + parseFloat(row.total || 0), 0);
-
+    
     res.json({
       folioTurno,
       fecha: now.toLocaleDateString('es-MX'),
@@ -490,6 +589,7 @@ app.get('/api/finanzas/historial-ventas', async (req, res) => {
   let query = `
     SELECT id, folio, num_mesa, mesero, cliente, personas, subtotal, iva, total, corte_aplicado, 
            TO_CHAR(fecha_cobro, 'DD/MM/YYYY HH12:MI AM') as hora_cobro,
+           pago_efectivo, pago_tarjeta, propina_efectivo, propina_tarjeta, descuento,
            items_consumidos
     FROM historial_ventas
     WHERE 1=1

@@ -6,10 +6,22 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
   const ventasLista = datos.ventas || [];
   const totalVentas = Number(datos.granTotal || datos.totalVentas) || 0;
   const mesasAtendidas = Number(datos.mesasAtendidas || ventasLista.length) || 0;
-  const propinasEstimadas = Number(datos.propinasEstimadas || (totalVentas * 0.10)) || 0;
+  
+  // 🔥 MOTOR MATEMÁTICO REAL (SIN TRAMPAS) 🔥
+  let realEfectivoVenta = 0;
+  let realTarjetaVenta = 0;
+  let realEfectivoPropina = 0;
+  let realTarjetaPropina = 0;
 
-  const estimadoEfectivo = totalVentas * 0.70;
-  const estimadoTarjeta = totalVentas * 0.30;
+  // Extraemos los datos exactos que vienen de PostgreSQL
+  ventasLista.forEach(v => {
+    realEfectivoVenta += parseFloat(v.pago_efectivo || 0);
+    realTarjetaVenta += parseFloat(v.pago_tarjeta || 0);
+    realEfectivoPropina += parseFloat(v.propina_efectivo || 0);
+    realTarjetaPropina += parseFloat(v.propina_tarjeta || 0);
+  });
+
+  const totalPropinasRecibidas = realEfectivoPropina + realTarjetaPropina;
 
   const fechaCorte = datos.fecha ? `${datos.fecha} • ${datos.hora}` : new Date().toLocaleString('es-MX', { 
     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' 
@@ -17,30 +29,100 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
   
   const folioTurno = datos.folioTurno || `TURNO-${new Date().toISOString().slice(0,10).replace(/-/g,'')}`;
 
-  // 🔥 EXPORTADOR EXCEL (.xls) COMPATIBLE CON OFFICE Y GOOGLE SHEETS 🔥
+  // =========================================================================
+  // 🔥 EXPORTADOR EXCEL ACTUALIZADO (IDÉNTICO AL DEL HISTORIAL) 🔥
+  // =========================================================================
   const exportarExcel = () => {
     let tablaHTML = `
-      <table border="1" style="font-family: Arial; border-collapse: collapse;">
+      <table border="1" style="font-family: Arial, sans-serif; border-collapse: collapse;">
         <thead>
-          <tr><th colspan="4" style="background:#1e1b4b; color:#ffffff; font-size:16px; padding:12px;">REPORTE DE VENTAS CORTE Z</th></tr>
-          <tr style="background:#f1f5f9;"><td colspan="2"><b>Turno:</b> ${folioTurno}</td><td colspan="2"><b>Corte:</b> ${fechaCorte}</td></tr>
-          <tr><td colspan="4"></td></tr>
+          <tr>
+            <th colspan="7" style="background:#1e1b4b; color:#ffffff; font-size:16px; padding:15px;">
+              REPORTE DE VENTAS Y PROPINAS CORTE Z — ${folioTurno}
+            </th>
+          </tr>
+          <tr style="background:#f1f5f9;">
+            <td colspan="7" style="padding:8px;"><b>Corte Generado:</b> ${fechaCorte}</td>
+          </tr>
+          <tr><td colspan="7"></td></tr>
           <tr style="background:#cbd5e1; font-weight:bold;">
-            <th style="padding:8px">Mesa Atendida</th><th style="padding:8px">Cliente / Titular</th><th style="padding:8px">Comensales (Pax)</th><th style="padding:8px">Total Pagado</th>
+            <th style="padding:10px; width:80px;">Mesa</th>
+            <th style="padding:10px; width:120px;">Atendió</th>
+            <th style="padding:10px; width:160px;">Cliente / Titular</th>
+            <th style="padding:10px; width:60px;">Pax</th>
+            <th style="padding:10px; width:350px;">Consumo (Alimentos y Bebidas)</th>
+            <th style="padding:10px; width:100px; color:#b45309;">Propina</th>
+            <th style="padding:10px; width:120px;">Cobrado</th>
           </tr>
         </thead>
         <tbody>
     `;
 
-    ventasLista.forEach(v => {
-      tablaHTML += `<tr><td style="text-align:center">${v.numMesa || 'Barra'}</td><td>${v.cliente || 'General'}</td><td style="text-align:center">${v.personas || 1}</td><td style="text-align:right">$${Number(v.total).toFixed(2)}</td></tr>`;
-    });
+    if (ventasLista.length === 0) {
+      tablaHTML += `<tr><td colspan="7" style="padding:20px; text-align:center; font-style:italic;">No hay ventas registradas en este turno.</td></tr>`;
+    } else {
+      ventasLista.forEach(v => {
+        let platillosStr = "";
+        let listaItems = v.items_consumidos;
+        
+        if (typeof listaItems === 'string') {
+          try { listaItems = JSON.parse(listaItems); } catch(e) { listaItems = []; }
+        }
+
+        if (Array.isArray(listaItems)) {
+          platillosStr = listaItems.map(p => `• ${p.cantidad}x ${p.nombre} ($${(p.precio * p.cantidad).toFixed(2)})`).join('<br/>');
+        }
+
+        const propinaMesa = (parseFloat(v.propina_efectivo || 0) + parseFloat(v.propina_tarjeta || 0)) || 0;
+
+        tablaHTML += `
+          <tr>
+            <td style="text-align:center; padding:10px; font-weight:bold;">${v.numMesa || v.num_mesa || 'Barra'}</td>
+            <td style="text-align:center; padding:10px;">${v.mesero || 'Mesero'}</td>
+            <td style="padding:10px;">${v.cliente || 'General'}</td>
+            <td style="text-align:center; padding:10px;">${v.personas || 1}</td>
+            <td style="padding:10px; font-size:11px; color:#334155;">${platillosStr || 'Venta directa en mostrador'}</td>
+            <td style="text-align:right; padding:10px; color:#b45309;">$${propinaMesa.toFixed(2)}</td>
+            <td style="text-align:right; padding:10px; font-weight:bold; color:#16a34a;">$${Number(v.total).toFixed(2)}</td>
+          </tr>
+        `;
+      });
+    }
 
     tablaHTML += `
         </tbody>
         <tfoot>
-          <tr><td colspan="4"></td></tr>
-          <tr><td colspan="2"></td><td style="font-weight:bold; text-align:right">GRAN TOTAL:</td><td style="font-weight:bold; color:#15803d; text-align:right font-size:14px;">$${totalVentas.toFixed(2)}</td></tr>
+          <tr><td colspan="7"></td></tr>
+          
+          <tr>
+            <td colspan="5" rowspan="3" style="vertical-align: middle; text-align: center; padding: 8px; background:#f1f5f9;"><b>RESUMEN DEL NEGOCIO</b></td>
+            <td style="font-weight:bold; text-align:right; background:#f8fafc;">Ventas Efectivo:</td>
+            <td style="text-align:right; background:#f8fafc;">$${realEfectivoVenta.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="font-weight:bold; text-align:right; background:#f8fafc;">Ventas Tarjeta:</td>
+            <td style="text-align:right; background:#f8fafc;">$${realTarjetaVenta.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="font-weight:black; text-align:right; background:#e2e8f0; color:#1e2b3c;">VENTA BRUTA:</td>
+            <td style="font-weight:black; text-align:right; background:#e2e8f0; color:#15803d; font-size:14px;">$${totalVentas.toFixed(2)}</td>
+          </tr>
+
+          <tr><td colspan="7"></td></tr>
+
+          <tr>
+            <td colspan="5" rowspan="3" style="vertical-align: middle; text-align: center; padding: 8px; background:#fffbeb;"><b>FONDOS DE MESEROS</b></td>
+            <td style="font-weight:bold; text-align:right; background:#fffbeb; color:#92400e;">Propinas Efectivo:</td>
+            <td style="text-align:right; background:#fffbeb; color:#92400e;">$${realEfectivoPropina.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="font-weight:bold; text-align:right; background:#fffbeb; color:#92400e;">Propinas Tarjeta:</td>
+            <td style="text-align:right; background:#fffbeb; color:#92400e;">$${realTarjetaPropina.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="font-weight:black; text-align:right; background:#fef3c7; color:#78350f;">TOTAL PROPINAS:</td>
+            <td style="font-weight:black; text-align:right; background:#fef3c7; color:#b45309; font-size:14px;">$${totalPropinasRecibidas.toFixed(2)}</td>
+          </tr>
         </tfoot>
       </table>
     `;
@@ -50,7 +132,7 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Ventas_${folioTurno}.xls`;
+    a.download = `CorteZ_${folioTurno}.xls`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -71,19 +153,27 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
           <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wider">{fechaCorte}</p>
         </div>
 
-        {/* CUERPO DEL TICKET */}
+        {/* CUERPO DEL TICKET CON DESGLOSE MATEMÁTICO REAL */}
         <div className="bg-[#050812] border border-slate-800/80 rounded-2xl p-5 mb-4 font-mono text-xs shadow-inner relative flex-1 overflow-hidden flex flex-col">
           <div className="absolute top-0 left-0 w-full h-1 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4IiBoZWlnaHQ9IjQiPjxwb2x5Z29uIHBvaW50cz0iMCwwIDQsNCA4LDAiIGZpbGw9IiMwYjExMjAiLz48L3N2Zz4=')] opacity-50"></div>
 
           <div className="space-y-2 text-slate-300 shrink-0 pb-3 border-b border-slate-800/80">
             <div className="flex justify-between items-end"><span className="text-slate-500 uppercase">Mesas Atendidas</span><span className="font-bold text-white">{mesasAtendidas} mesas</span></div>
-            <div className="flex justify-between items-end"><span className="text-slate-500 uppercase">Ventas (70% Efe)</span><span>${estimadoEfectivo.toFixed(2)}</span></div>
-            <div className="flex justify-between items-end"><span className="text-slate-500 uppercase">Ventas (30% Tar)</span><span>${estimadoTarjeta.toFixed(2)}</span></div>
-            <div className="flex justify-between items-end pt-1 text-sm font-black"><span className="text-slate-400 uppercase">Total Bruto</span><span className="text-emerald-400">${totalVentas.toFixed(2)}</span></div>
-            <div className="flex justify-between items-end text-[10px]"><span className="text-slate-500 uppercase">Propinas Est. (10%)</span><span className="text-amber-400">${propinasEstimadas.toFixed(2)}</span></div>
+            
+            {/* INGRESO PARA EL RESTAURANTE */}
+            <div className="pt-2"><span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">INGRESOS DEL NEGOCIO:</span></div>
+            <div className="flex justify-between items-end pl-2"><span className="text-slate-500 uppercase text-[10px]">Ventas 💵 Efectivo</span><span>${realEfectivoVenta.toFixed(2)}</span></div>
+            <div className="flex justify-between items-end pl-2"><span className="text-slate-500 uppercase text-[10px]">Ventas 💳 Tarjeta</span><span>${realTarjetaVenta.toFixed(2)}</span></div>
+            <div className="flex justify-between items-end pt-1 text-sm font-black"><span className="text-slate-400 uppercase">Venta Bruta</span><span className="text-emerald-400">${totalVentas.toFixed(2)}</span></div>
+            
+            {/* FONDOS PARA LOS MESEROS */}
+            <div className="pt-2"><span className="text-[9px] font-black text-amber-500 uppercase tracking-widest">PROPINAS RECAUDADAS:</span></div>
+            <div className="flex justify-between items-end pl-2"><span className="text-slate-500 uppercase text-[10px]">Propinas 💵 Efectivo</span><span>${realEfectivoPropina.toFixed(2)}</span></div>
+            <div className="flex justify-between items-end pl-2"><span className="text-slate-500 uppercase text-[10px]">Propinas 💳 Tarjeta</span><span>${realTarjetaPropina.toFixed(2)}</span></div>
+            <div className="flex justify-between items-end text-xs font-bold mt-1 text-amber-400 border-t border-dashed border-slate-700 pt-1"><span className="uppercase">Total a repartir a Meseros</span><span>${totalPropinasRecibidas.toFixed(2)}</span></div>
           </div>
 
-          {/* 🔥 DESGLOSE CON SCROLL DE LAS MESAS COBRADAS 🔥 */}
+          {/* DESGLOSE CON SCROLL DE LAS MESAS COBRADAS */}
           <div className="flex-1 overflow-y-auto pt-3 space-y-1.5 scrollbar-thin scrollbar-thumb-slate-800 pr-1">
             <span className="text-[9px] text-indigo-400 font-bold uppercase tracking-widest block mb-1">Desglose de Mesas del Turno:</span>
             {ventasLista.length === 0 ? (
@@ -91,7 +181,7 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
             ) : (
               ventasLista.map((v, i) => (
                 <div key={i} className="flex justify-between items-center bg-slate-900/40 p-1.5 rounded text-[11px] text-slate-400">
-                  <span className="truncate max-w-[170px]">🪑 <b>{v.numMesa}</b>: {v.cliente} ({v.personas}p)</span>
+                  <span className="truncate max-w-[170px]">🪑 <b>{v.numMesa || v.num_mesa}</b>: {v.cliente} ({v.personas}p)</span>
                   <span className="text-slate-200 font-bold">${Number(v.total).toFixed(2)}</span>
                 </div>
               ))

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import HistorialCortes from './HistorialCortes'; // IMPORTAMOS LA PESTAÑA DE CORTES
+import HistorialCortes from './HistorialCortes';
+import ModalCorteZ from './ModalCorteZ';
 
 export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
   const [pestañaActiva, setPestañaActiva] = useState('en-vivo'); // 'en-vivo' | 'historial'
@@ -9,7 +10,7 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
   const [filtroFolio, setFiltroFolio] = useState('');
   const [filtroFecha, setFiltroFecha] = useState('');
 
-  // 🔥 NUEVO ESTADO: Control del modal de reimpresión interno 🔥
+  // Control del modal de reimpresión interno
   const [modalReimpresion, setModalReimpresion] = useState({ isOpen: false, venta: null, config: null, platillos: [] });
 
   const cargarVentas = () => {
@@ -52,17 +53,15 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
   const modoBusqueda = filtroFolio !== '' || filtroFecha !== '';
 
   // =========================================================================
-  // 🔥 PREPARADOR DEL MODAL INTERNO DE REIMPRESIÓN 🔥
+  // PREPARADOR DEL MODAL INTERNO DE REIMPRESIÓN (CON PROPINAS Y MÉTODOS)
   // =========================================================================
   const handlePrepararReimpresion = async (venta) => {
-    // 1. Obtenemos la configuración fresca del negocio
     let config = { nombre_negocio: 'Sabor.io Restaurante', rfc: 'XAXX010101000', direccion: 'Av. De los Héroes 123', telefono: '686 555 1234', iva: 16, mensaje_ticket: '¡Gracias por su preferencia!' };
     try {
       const res = await fetch(`http://${window.location.hostname}:3000/api/configuracion`);
       if (res.ok) config = await res.json();
     } catch (e) {}
 
-    // 2. Extraemos los platillos de la venta
     let platillos = [];
     try {
       platillos = Array.isArray(venta.items_consumidos) ? venta.items_consumidos : JSON.parse(venta.items_consumidos || '[]');
@@ -70,7 +69,6 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
       console.error("Error parseando platillos", e);
     }
 
-    // 3. Activamos el modal interno en lugar de abrir un popup en blanco
     setModalReimpresion({
       isOpen: true,
       venta,
@@ -79,10 +77,19 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
     });
   };
 
-  // 🔥 DISPARADOR DE IMPRESIÓN FÍSICA DIRECTA 🔥
+  // 🔥 DISPARADOR DE IMPRESIÓN FÍSICA DIRECTA CON DESGLOSE DE PAGO 🔥
   const ejecutarImpresionFisica = () => {
     const { venta, config, platillos } = modalReimpresion;
     if (!venta) return;
+
+    // Extracción segura de datos financieros para el ticket histórico
+    const pagoEfectivo = parseFloat(venta.pago_efectivo || 0);
+    const pagoTarjeta = parseFloat(venta.pago_tarjeta || 0);
+    const propEfectivo = parseFloat(venta.propina_efectivo || 0);
+    const propTarjeta = parseFloat(venta.propina_tarjeta || 0);
+    const totalEfectivo = pagoEfectivo + propEfectivo;
+    const totalTarjeta = pagoTarjeta + propTarjeta;
+    const tienePropina = propEfectivo > 0 || propTarjeta > 0;
 
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
@@ -134,7 +141,16 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
           <div class="dash"></div>
           <div class="flex"><span>Subtotal:</span><span>$${parseFloat(venta.subtotal).toFixed(2)}</span></div>
           <div class="flex"><span>I.V.A. (${config.iva}%):</span><span>$${parseFloat(venta.iva).toFixed(2)}</span></div>
-          <div class="flex bold" style="font-size: 12px; margin-top: 2px;"><span>TOTAL:</span><span>$${parseFloat(venta.total).toFixed(2)}</span></div>
+          ${tienePropina ? `<div class="flex"><span>Propina:</span><span>$${(propEfectivo + propTarjeta).toFixed(2)}</span></div>` : ''}
+          <div class="flex bold" style="font-size: 12px; margin-top: 4px; padding-top: 4px; border-top: 1px solid #000;">
+            <span>TOTAL PAGADO:</span><span>$${parseFloat(venta.total).toFixed(2)}</span>
+          </div>
+
+          <div class="dash"></div>
+          <div class="center bold" style="font-size: 10px; margin-bottom: 2px;">MÉTODO DE PAGO</div>
+          ${totalEfectivo > 0 ? `<div class="flex" style="font-size: 10px;"><span>💵 Efectivo:</span><span>$${totalEfectivo.toFixed(2)}</span></div>` : ''}
+          ${totalTarjeta > 0 ? `<div class="flex" style="font-size: 10px;"><span>💳 Tarjeta:</span><span>$${totalTarjeta.toFixed(2)}</span></div>` : ''}
+
           <div class="dash"></div>
           <div class="center" style="margin-top: 12px; font-style: italic;">
             ${config.mensaje_ticket}
@@ -154,7 +170,7 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
     <div className="flex-1 p-6 md:p-8 overflow-y-auto bg-[#070b16] text-slate-200 select-none font-sans relative">
       
       {/* =========================================================================
-          🔥 MODAL INTERNO INTEGRADO CON EL DISEÑO DEL RESTAURANTE 🔥
+          🔥 MODAL INTERNO DE REIMPRESIÓN (HISTÓRICA) 🔥
           ========================================================================= */}
       {modalReimpresion.isOpen && (
         <div className="fixed inset-0 z-[350] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
@@ -166,7 +182,6 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
               <p className="text-xs text-slate-400 mt-1">Copia fiel del archivo digital en base de datos.</p>
             </header>
 
-            {/* Simulación del papel térmico */}
             <div className="bg-white text-slate-950 p-4 rounded-xl font-mono text-[11px] space-y-1.5 border border-slate-200 shadow-inner max-h-[45vh] overflow-y-auto select-text">
               <div className="text-center font-sans space-y-0.5 mb-3">
                 <p className="text-[10px] font-black border border-slate-950 px-2 py-0.5 rounded tracking-wide mb-2 inline-block">*** REIMPRESIÓN ***</p>
@@ -200,25 +215,20 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
               <div className="border-t border-dashed border-slate-300 my-2"></div>
               <div className="flex justify-between"><span>Subtotal:</span><span>${parseFloat(modalReimpresion.venta?.subtotal || 0).toFixed(2)}</span></div>
               <div className="flex justify-between"><span>I.V.A. ({modalReimpresion.config?.iva}%):</span><span>${parseFloat(modalReimpresion.venta?.iva || 0).toFixed(2)}</span></div>
+              
+              {/* 🔥 RE-CALCULO DE PROPINAS EN VISTA PREVIA 🔥 */}
+              {(parseFloat(modalReimpresion.venta?.propina_efectivo || 0) + parseFloat(modalReimpresion.venta?.propina_tarjeta || 0)) > 0 && (
+                <div className="flex justify-between"><span>Propina:</span><span>${(parseFloat(modalReimpresion.venta?.propina_efectivo || 0) + parseFloat(modalReimpresion.venta?.propina_tarjeta || 0)).toFixed(2)}</span></div>
+              )}
+
               <div className="flex justify-between font-bold text-xs border-t border-slate-900 pt-1 mt-1"><span>TOTAL RECIBIDO:</span><span>${parseFloat(modalReimpresion.venta?.total || 0).toFixed(2)}</span></div>
               <div className="border-t border-dashed border-slate-300 my-2"></div>
               <p className="text-center font-sans italic text-[10px] text-slate-400 pt-1 leading-tight">{modalReimpresion.config?.mensaje_ticket}</p>
             </div>
 
-            {/* Acciones del Modal */}
             <div className="flex gap-3 mt-4">
-              <button 
-                onClick={() => setModalReimpresion({ isOpen: false, venta: null, config: null, platillos: [] })} 
-                className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl uppercase tracking-widest text-[10px] cursor-pointer"
-              >
-                Volver
-              </button>
-              <button 
-                onClick={ejecutarImpresionFisica} 
-                className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-xl uppercase tracking-widest text-[10px] shadow-lg shadow-indigo-600/20 cursor-pointer transition-all active:scale-95"
-              >
-                🖨️ Mandar a Ticketera
-              </button>
+              <button onClick={() => setModalReimpresion({ isOpen: false, venta: null, config: null, platillos: [] })} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl uppercase tracking-widest text-[10px] cursor-pointer">Volver</button>
+              <button onClick={ejecutarImpresionFisica} className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-xl uppercase tracking-widest text-[10px] shadow-lg shadow-indigo-600/20 cursor-pointer transition-all active:scale-95">🖨️ Mandar a Ticketera</button>
             </div>
           </div>
         </div>
@@ -233,20 +243,10 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
         </div>
         
         <div className="flex bg-[#0b1120] p-1.5 rounded-2xl border border-slate-800 shrink-0 shadow-lg">
-          <button 
-            onClick={() => setPestañaActiva('en-vivo')}
-            className={`px-6 py-2.5 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all ${
-              pestañaActiva === 'en-vivo' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
+          <button onClick={() => setPestañaActiva('en-vivo')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all ${pestañaActiva === 'en-vivo' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}>
             📊 Turno en Vivo
           </button>
-          <button 
-            onClick={() => setPestañaActiva('historial')}
-            className={`px-6 py-2.5 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all ${
-              pestañaActiva === 'historial' ? 'bg-[#5a4bfa] text-white shadow-lg shadow-indigo-500/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-            }`}
-          >
+          <button onClick={() => setPestañaActiva('historial')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all ${pestañaActiva === 'historial' ? 'bg-[#5a4bfa] text-white shadow-lg shadow-indigo-500/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}>
             📑 Cortes Z
           </button>
         </div>
@@ -293,7 +293,6 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
 
           {/* BUSCADOR UNIVERSAL Y TABLA DE VENTAS */}
           <div className="bg-[#0b1120] border border-slate-800 rounded-2xl p-6 shadow-xl">
-            
             <div className="flex flex-col xl:flex-row xl:justify-between xl:items-end mb-6 pb-6 border-b border-slate-800/80 gap-6">
               <div>
                 <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-3">
@@ -316,13 +315,9 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
                 <div>
                   <input type="date" value={filtroFecha} onChange={e => setFiltroFecha(e.target.value)} className="bg-[#0b1120] border border-slate-700 rounded-lg px-3 py-1.5 text-[11px] font-bold text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer [color-scheme:dark]" title="Buscar por Fecha" />
                 </div>
-                <button onClick={cargarVentas} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors h-[30px] cursor-pointer">
-                  Buscar
-                </button>
+                <button onClick={cargarVentas} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors h-[30px] cursor-pointer">Buscar</button>
                 {modoBusqueda && (
-                  <button onClick={() => { setFiltroFolio(''); setFiltroFecha(''); setTimeout(cargarVentas, 50); }} className="bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors h-[30px] cursor-pointer border border-rose-500/20">
-                    Limpiar
-                  </button>
+                  <button onClick={() => { setFiltroFolio(''); setFiltroFecha(''); setTimeout(cargarVentas, 50); }} className="bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors h-[30px] cursor-pointer border border-rose-500/20">Limpiar</button>
                 )}
               </div>
 
@@ -362,11 +357,7 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
                       <td className="py-3 text-right font-mono text-slate-400">${parseFloat(v.iva || 0).toFixed(2)}</td>
                       <td className="py-3 text-right font-mono font-black text-emerald-400">${parseFloat(v.total || 0).toFixed(2)}</td>
                       <td className="py-3 text-center pr-2">
-                        <button 
-                          onClick={() => handlePrepararReimpresion(v)} 
-                          className="bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500 hover:text-white border border-indigo-500/30 p-1.5 rounded-lg transition-colors cursor-pointer shadow-sm active:scale-90"
-                          title="Visualizar y Reimprimir"
-                        >
+                        <button onClick={() => handlePrepararReimpresion(v)} className="bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500 hover:text-white border border-indigo-500/30 p-1.5 rounded-lg transition-colors cursor-pointer shadow-sm active:scale-90" title="Visualizar y Reimprimir">
                           🖨️
                         </button>
                       </td>

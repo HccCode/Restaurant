@@ -5,17 +5,31 @@ export default function GestionMenu() {
   const [categoriaActiva, setCategoriaActiva] = useState('Todas');
   const [arrastrandoIdx, setArrastrandoIdx] = useState(null);
 
-  // Ref que mantiene la foto exacta de la base de datos visual en tiempo real
   const listaMaestraRef = useRef(productos);
 
   const [modalAbierto, setModalAbierto] = useState(false);
-  const [form, setForm] = useState({ id: null, nombre: '', categoria: 'Platos Fuertes', precio: '', imagen: '', descripcion: '' });
   const [mensaje, setMensaje] = useState(null);
 
-  const BASE_URL = `http://${window.location.hostname}:3000/api`;
-  const categorias = ['Todas', 'Bebidas', 'Entradas', 'Platos Fuertes', 'Postres', 'Extras'];
+  // Catálogo de Inventario para armar recetas
+  const [inventario, setInventario] = useState([]);
+  
+  // Selectores para armar el Escandallo (Receta)
+  const [ingSeleccionado, setIngSeleccionado] = useState('');
+  const [cantidadIng, setCantidadIng] = useState('');
 
-  // Sincronizar siempre el Ref con el estado de React
+  const [form, setForm] = useState({ 
+    id: null, 
+    nombre: '', 
+    categoria: 'Platos Fuertes', 
+    precio: '', 
+    imagen: '', 
+    descripcion: '',
+    receta: [] // 🔥 AQUÍ SE GUARDAN LOS INGREDIENTES 🔥
+  });
+
+  const BASE_URL = `http://${window.location.hostname}:3000/api`;
+  const categorias = ['Todas', 'Bebidas', 'Entradas', 'Platos Fuertes', 'Postres', 'Extras', 'Coctelería', 'Cervezas', 'Licores'];
+
   useEffect(() => {
     listaMaestraRef.current = productos;
   }, [productos]);
@@ -29,7 +43,17 @@ export default function GestionMenu() {
     }
   };
 
-  useEffect(() => { cargarCarta(); }, []);
+  const cargarInventario = async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/inventario`);
+      if (res.ok) setInventario(await res.json());
+    } catch (e) { console.error('Error cargando inventario:', e); }
+  };
+
+  useEffect(() => { 
+    cargarCarta(); 
+    cargarInventario();
+  }, []);
 
   const mostrarNotificacion = (texto) => {
     setMensaje(texto);
@@ -44,14 +68,12 @@ export default function GestionMenu() {
   const handleImprimirMenuCarta = async () => {
     if (!productos || productos.length === 0) return alert("El menú no tiene platillos registrados.");
 
-    // 1. Jalamos los datos frescos de la configuración del restaurante
     let conf = { nombre_negocio: 'Sabor.io Restaurant', direccion: '', telefono: '', iva: 16 };
     try {
       const res = await fetch(`${BASE_URL}/configuracion`);
       if (res.ok) conf = await res.json();
     } catch (e) {}
 
-    // 2. Definimos el orden gastronómico tradicional para las hojas impresas
     const ordenPrioridad = ['Entradas', 'Platos Fuertes', 'Bebidas', 'Postres', 'Extras'];
     const categoriasExistentes = [...new Set(productos.map(p => p.categoria))];
     
@@ -60,7 +82,6 @@ export default function GestionMenu() {
       ...categoriasExistentes.filter(c => !ordenPrioridad.includes(c))
     ];
 
-    // 3. Maquetamos los platillos bloque por bloque en HTML puro
     let htmlPlatillos = '';
 
     categoriasOrdenadas.forEach(cat => {
@@ -88,7 +109,6 @@ export default function GestionMenu() {
       htmlPlatillos += `</div></div>`;
     });
 
-    // 4. Abrimos e inyectamos estilos de imprenta tradicionales (Cinzel + Lato de Google Fonts)
     const printWin = window.open('', '_blank');
     printWin.document.write(`
       <!DOCTYPE html>
@@ -123,7 +143,7 @@ export default function GestionMenu() {
               letter-spacing: 8px;
               text-transform: uppercase;
               margin: 0;
-              color: #881337; /* Color Vino Editorial */
+              color: #881337; 
             }
             .rest-sub {
               font-size: 10px;
@@ -243,16 +263,12 @@ export default function GestionMenu() {
     printWin.document.close();
     printWin.focus();
     
-    // Retardo de medio segundo para que bajen las fuentes romanas antes del diálogo
     setTimeout(() => {
       printWin.print();
       printWin.close();
     }, 500);
   };
 
-  // =========================================================================
-  // FÍSICAS DRAG & DROP (APARTADO DE TARJETAS EN TIEMPO REAL)
-  // =========================================================================
   const iniciarArrastre = (e, index) => {
     setArrastrandoIdx(index);
     e.dataTransfer.effectAllowed = 'move';
@@ -283,15 +299,11 @@ export default function GestionMenu() {
     setArrastrandoIdx(indexDestino);
   };
 
-  // =========================================================================
-  // PERSISTENCIA EN POSTGRES AL SOLTAR EL RATÓN
-  // =========================================================================
   const finalizarSoltado = async (e) => {
     e.preventDefault();
     e.target.classList.remove('opacity-0');
     setArrastrandoIdx(null);
 
-    // Mapeamos las nuevas coordenadas de toda la carta
     const paqueteDeOrden = listaMaestraRef.current.map((prod, index) => ({
       id: prod.id,
       orden: index
@@ -312,14 +324,45 @@ export default function GestionMenu() {
   };
 
   // =========================================================================
-  // ACCIONES CRUD
+  // 🔥 LÓGICA DEL CONSTRUCTOR DE RECETAS 🔥
   // =========================================================================
+  const agregarIngrediente = () => {
+    if (!ingSeleccionado || !cantidadIng || parseFloat(cantidadIng) <= 0) return;
+    
+    const ingDB = inventario.find(i => String(i.id) === String(ingSeleccionado));
+    if (!ingDB) return;
+
+    if (form.receta.some(r => String(r.id_ingrediente) === String(ingSeleccionado))) {
+      alert('Ese ingrediente ya está en la receta.');
+      return;
+    }
+
+    setForm({
+      ...form,
+      receta: [...form.receta, {
+        id_ingrediente: ingDB.id,
+        nombre: ingDB.item,
+        cantidad: parseFloat(cantidadIng),
+        unidad: ingDB.unidad
+      }]
+    });
+
+    setIngSeleccionado('');
+    setCantidadIng('');
+  };
+
+  const quitarIngrediente = (idQuitar) => {
+    setForm({
+      ...form,
+      receta: form.receta.filter(r => r.id_ingrediente !== idQuitar)
+    });
+  };
+
   const guardarPlatillo = async (e) => {
     e.preventDefault();
     const esNuevo = !form.id;
     const url = esNuevo ? `${BASE_URL}/menu` : `${BASE_URL}/menu/${form.id}`;
     
-    // Si es nuevo, lo mandamos directo al final de la cola
     const payload = esNuevo ? { ...form, orden: productos.length } : form;
 
     try {
@@ -348,15 +391,30 @@ export default function GestionMenu() {
   };
 
   const abrirModal = (prod = null) => {
-    if (prod) setForm(prod);
-    else setForm({ id: null, nombre: '', categoria: categoriaActiva === 'Todas' ? 'Platos Fuertes' : categoriaActiva, precio: '', imagen: '', descripcion: '' });
+    if (prod) {
+      setForm({
+        ...prod,
+        receta: prod.receta || [] // Si no tiene receta, carga un arreglo vacío
+      });
+    } else {
+      setForm({ 
+        id: null, 
+        nombre: '', 
+        categoria: categoriaActiva === 'Todas' ? 'Platos Fuertes' : categoriaActiva, 
+        precio: '', 
+        imagen: '', 
+        descripcion: '',
+        receta: [] 
+      });
+    }
+    setIngSeleccionado('');
+    setCantidadIng('');
     setModalAbierto(true);
   };
 
   return (
     <div className="flex-1 w-full h-full bg-[#14110F] text-[#2D231E] p-4 md:p-6 font-sans select-none flex flex-col items-center justify-center overflow-hidden relative">
       
-      {/* Estilos inyectados para la barra de desplazamiento color vino */}
       <style>{`
         .pergamino-scroll::-webkit-scrollbar { width: 8px; }
         .pergamino-scroll::-webkit-scrollbar-track { background: rgba(232, 223, 201, 0.5); border-radius: 8px; }
@@ -364,20 +422,16 @@ export default function GestionMenu() {
         .pergamino-scroll::-webkit-scrollbar-thumb:hover { background: #5b0d25; }
       `}</style>
 
-      {/* Toast Notificador Flotante */}
       {mensaje && (
         <div className="absolute top-4 z-50 bg-[#881337] text-[#FAF6EE] px-6 py-2.5 rounded-full shadow-2xl font-serif text-xs uppercase tracking-widest font-bold border border-[#FAF6EE]/20 flex items-center gap-2">
           <span>🔔</span> {mensaje}
         </div>
       )}
 
-      {/* El Folleto Físico (Encuadernado) */}
       <div className="w-full max-w-5xl h-full max-h-[calc(100vh-50px)] bg-[#FAF6EE] rounded-2xl shadow-2xl border-[8px] border-[#E8DFC9] p-6 md:p-8 flex flex-col relative overflow-hidden">
         
-        {/* Sombra de doblez de encuadernación central */}
         <div className="hidden md:block absolute top-0 bottom-0 left-1/2 w-[3px] bg-gradient-to-b from-transparent via-[#D2C5AB] to-transparent pointer-events-none -translate-x-1/2 opacity-70" />
 
-        {/* Cabecera Estática */}
         <div className="flex flex-col sm:flex-row items-center justify-between border-b-2 border-[#D2C5AB]/60 pb-4 mb-6 gap-4 shrink-0">
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-[#881337]/10 text-[#881337] text-[11px] font-serif font-bold uppercase tracking-widest mb-1">
@@ -388,7 +442,6 @@ export default function GestionMenu() {
             </h1>
           </div>
 
-          {/* 🔥 BOTONERA ACCIONES DUALES: IMPRESIÓN Y CREACIÓN 🔥 */}
           <div className="flex gap-3 shrink-0">
             <button
               onClick={handleImprimirMenuCarta}
@@ -406,7 +459,6 @@ export default function GestionMenu() {
           </div>
         </div>
 
-        {/* Marcapáginas / Categorías */}
         <div className="flex flex-wrap justify-center gap-1.5 mb-6 shrink-0 z-10">
           {categorias.map(cat => (
             <button
@@ -423,7 +475,6 @@ export default function GestionMenu() {
           ))}
         </div>
 
-        {/* Zona con Scroll Interno para los Platillos */}
         <div className="flex-1 overflow-y-auto pergamino-scroll pr-2 pb-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {productosFiltrados.map((prod, index) => {
@@ -465,6 +516,13 @@ export default function GestionMenu() {
                     <p className="text-[11px] text-[#6E5D52] italic line-clamp-2 mt-1.5 leading-normal bg-[#FAF6EE]/60 p-1.5 rounded border border-[#E8DFC9]/30">
                       {prod.descripcion || 'Sin descripción...'}
                     </p>
+                    
+                    {/* ETIQUETA VISUAL DEL ESCANDALLO */}
+                    {prod.receta && prod.receta.length > 0 && (
+                      <span className="mt-2 text-[9px] font-black tracking-widest uppercase text-[#5b0d25] bg-[#881337]/10 px-2 py-0.5 rounded border border-[#881337]/20 w-fit">
+                        📦 {prod.receta.length} insumos
+                      </span>
+                    )}
                   </div>
 
                   <div className="bg-[#F6EFE5] px-4 py-2 border-t border-[#E4D9C5] flex justify-between items-center gap-2">
@@ -490,7 +548,6 @@ export default function GestionMenu() {
           </div>
         </div>
 
-        {/* Pie de página estático del Menú */}
         <div className="pt-3 border-t border-[#D2C5AB]/40 flex justify-between items-center text-[#A39178] font-serif text-[11px] italic shrink-0">
           <span>Sabor.io POS • Cocina</span>
           <span>Sincronización automática a PostgreSQL activa</span>
@@ -498,48 +555,115 @@ export default function GestionMenu() {
 
       </div>
 
-      {/* --- MODAL DE CREACIÓN / EDICIÓN --- */}
+      {/* --- MODAL DOBLE DE EDICIÓN Y ESCANDALLOS --- */}
       {modalAbierto && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#FAF6EE] border-4 border-[#E8DFC9] rounded-2xl max-w-md w-full p-6 shadow-2xl animate-fade-in">
-            <h2 className="text-xl font-serif font-bold text-[#881337] uppercase border-b border-[#D2C5AB] pb-2 mb-4">
-              {form.id ? '✏️ Modificar Receta' : '📜 Nuevo Platillo'}
-            </h2>
+          <div className="bg-[#FAF6EE] border-4 border-[#E8DFC9] rounded-2xl max-w-4xl w-full flex flex-col shadow-2xl animate-fade-in max-h-[90vh]">
+            
+            <div className="p-5 border-b border-[#D2C5AB] flex justify-between items-center bg-[#E8DFC9]/30">
+              <h2 className="text-lg font-serif font-black text-[#881337] uppercase">
+                {form.id ? '✏️ Modificar Platillo y Receta' : '📜 Nuevo Platillo y Receta'}
+              </h2>
+              <button onClick={() => setModalAbierto(false)} className="text-[#5C483F] hover:text-[#881337] font-black cursor-pointer">✕</button>
+            </div>
 
-            <form onSubmit={guardarPlatillo} className="space-y-3 text-xs font-serif text-[#5C483F] font-bold">
-              <div>
-                <label className="block uppercase mb-1">Nombre</label>
-                <input type="text" required value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded p-2 font-sans text-[#2D231E] outline-none" />
+            <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
+              
+              {/* COLUMNA 1: DATOS COMERCIALES */}
+              <div className="space-y-4">
+                <h3 className="text-xs font-serif font-black tracking-widest text-[#5b0d25] uppercase border-b border-[#D2C5AB] pb-2 mb-4">Detalles Comerciales</h3>
+                
+                <div>
+                  <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">Nombre</label>
+                  <input type="text" required value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#2D231E] outline-none focus:border-[#881337]" placeholder="Ej. Hamburguesa Doble" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">Categoría</label>
+                    <select value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#2D231E] outline-none focus:border-[#881337]">
+                      {categorias.filter(c=>c!=='Todas').map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">Precio ($)</label>
+                    <input type="number" step="0.01" required value={form.precio} onChange={e => setForm({...form, precio: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#881337] font-mono font-bold outline-none focus:border-[#881337]" placeholder="0.00" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">URL de Imagen</label>
+                  <input type="url" value={form.imagen} onChange={e => setForm({...form, imagen: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#2D231E] outline-none focus:border-[#881337]" placeholder="https://..." />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">Descripción</label>
+                  <textarea rows="2" value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#2D231E] outline-none focus:border-[#881337]" />
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block uppercase mb-1">Categoría</label>
-                  <select value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded p-2 font-sans text-[#2D231E] outline-none">
-                    {categorias.filter(c=>c!=='Todas').map(c => <option key={c} value={c}>{c}</option>)}
+              {/* COLUMNA 2: CONSTRUCTOR DE RECETAS (ESCANDALLOS) */}
+              <div className="bg-[#E8DFC9]/30 p-5 rounded-2xl border border-[#D2C5AB] flex flex-col h-full">
+                <h3 className="text-xs font-serif font-black tracking-widest text-[#5b0d25] uppercase border-b border-[#D2C5AB] pb-2 mb-4">Constructor de Receta (Almacén)</h3>
+                
+                <div className="flex gap-2 mb-4">
+                  <select value={ingSeleccionado} onChange={e => setIngSeleccionado(e.target.value)} className="flex-1 bg-white border border-[#D2C5AB] rounded-xl p-2.5 text-xs text-[#2D231E] outline-none font-sans font-bold">
+                    <option value="">-- Buscar Insumo --</option>
+                    {inventario.map(inv => (
+                      <option key={inv.id} value={inv.id}>{inv.item} ({inv.unidad})</option>
+                    ))}
                   </select>
+                  
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    placeholder="Cant." 
+                    value={cantidadIng} 
+                    onChange={e => setCantidadIng(e.target.value)} 
+                    className="w-20 bg-white border border-[#D2C5AB] rounded-xl p-2.5 text-xs text-center text-[#881337] font-mono font-bold outline-none" 
+                  />
+                  
+                  <button type="button" onClick={agregarIngrediente} className="bg-[#5C483F] hover:bg-[#2D231E] text-white font-black px-4 rounded-xl text-xs cursor-pointer">+</button>
                 </div>
-                <div>
-                  <label className="block uppercase mb-1">Precio ($)</label>
-                  <input type="number" step="0.01" required value={form.precio} onChange={e => setForm({...form, precio: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded p-2 font-mono text-[#881337] font-bold outline-none" />
+
+                <div className="flex-1 bg-white border border-[#D2C5AB] rounded-xl p-3 overflow-y-auto min-h-[150px]">
+                  {form.receta.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-[#A39178] text-center font-serif">
+                      <span className="text-3xl mb-2">🍽️</span>
+                      <p className="text-[10px] uppercase font-bold tracking-widest">Sin ingredientes</p>
+                      <p className="text-[9px] mt-1 italic">Vender esto no descontará nada del almacén.</p>
+                    </div>
+                  ) : (
+                    <ul className="space-y-2">
+                      {form.receta.map((r, i) => (
+                        <li key={i} className="flex justify-between items-center bg-[#FAF6EE] border border-[#E8DFC9] p-2.5 rounded-lg">
+                          <span className="text-xs font-bold text-[#2D231E] font-sans">
+                            {r.nombre}
+                          </span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-mono font-black text-[#881337] bg-[#881337]/10 px-2 py-0.5 rounded border border-[#881337]/20">
+                              {r.cantidad} {r.unidad}
+                            </span>
+                            <button type="button" onClick={() => quitarIngrediente(r.id_ingrediente)} className="text-rose-500 hover:text-rose-700 font-bold text-xs cursor-pointer">✖</button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
 
-              <div>
-                <label className="block uppercase mb-1">URL de Imagen</label>
-                <input type="url" value={form.imagen} onChange={e => setForm({...form, imagen: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded p-2 font-sans font-normal text-[11px]" placeholder="https://..." />
-              </div>
+            </div>
 
-              <div>
-                <label className="block uppercase mb-1">Descripción</label>
-                <textarea rows="2" value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded p-2 font-sans font-normal outline-none" />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3">
-                <button type="button" onClick={() => setModalAbierto(false)} className="px-4 py-2 bg-[#E8DFC9] text-[#2D231E] rounded font-sans font-bold cursor-pointer">Cancelar</button>
-                <button type="submit" className="px-4 py-2 bg-[#881337] text-white rounded font-sans font-bold uppercase cursor-pointer">Guardar</button>
-              </div>
-            </form>
+            <div className="p-5 border-t border-[#D2C5AB] bg-[#E8DFC9]/30 flex justify-end gap-3">
+              <button onClick={() => setModalAbierto(false)} className="px-6 py-3.5 bg-white border border-[#D2C5AB] hover:bg-[#E8DFC9] text-[#5C483F] font-serif font-bold rounded-xl text-xs uppercase tracking-widest cursor-pointer transition-colors">
+                Cancelar
+              </button>
+              <button onClick={guardarPlatillo} className="px-8 py-3.5 bg-[#881337] hover:bg-[#700f2b] text-white font-serif font-black rounded-xl text-xs uppercase tracking-widest shadow-lg shadow-[#881337]/30 cursor-pointer transition-transform active:scale-95">
+                Guardar Platillo
+              </button>
+            </div>
+            
           </div>
         </div>
       )}

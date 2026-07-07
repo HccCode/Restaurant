@@ -4,6 +4,7 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
   if (!isOpen || !datos) return null;
 
   const ventasLista = datos.ventas || [];
+  const movimientosLista = datos.movimientosDetalle || [];
   const totalVentas = Number(datos.granTotal || datos.totalVentas) || 0;
   const mesasAtendidas = Number(datos.mesasAtendidas || ventasLista.length) || 0;
   
@@ -13,7 +14,7 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
   let realEfectivoPropina = 0;
   let realTarjetaPropina = 0;
 
-  // Extraemos los datos exactos que vienen de PostgreSQL
+  // Extraemos los datos exactos que vienen de PostgreSQL (Ventas)
   ventasLista.forEach(v => {
     realEfectivoVenta += parseFloat(v.pago_efectivo || 0);
     realTarjetaVenta += parseFloat(v.pago_tarjeta || 0);
@@ -23,6 +24,14 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
 
   const totalPropinasRecibidas = realEfectivoPropina + realTarjetaPropina;
 
+  // Extraemos los datos de Movimientos de Caja
+  const fondoYEntradas = parseFloat(datos.entradasCaja || 0);
+  const pagosYSalidas = parseFloat(datos.salidasCaja || 0);
+
+  // 🔥 CÁLCULO ESTRICTO DE EFECTIVO FÍSICO ESPERADO EN GAVETA 🔥
+  // = Fondo Inicial + Todo lo vendido en efectivo + Propinas recibidas en efectivo - Pagos de Caja
+  const efectivoFisicoEsperado = fondoYEntradas + realEfectivoVenta + realEfectivoPropina - pagosYSalidas;
+
   const fechaCorte = datos.fecha ? `${datos.fecha} • ${datos.hora}` : new Date().toLocaleString('es-MX', { 
     weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' 
   });
@@ -30,7 +39,7 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
   const folioTurno = datos.folioTurno || `TURNO-${new Date().toISOString().slice(0,10).replace(/-/g,'')}`;
 
   // =========================================================================
-  // 🔥 EXPORTADOR EXCEL ACTUALIZADO (IDÉNTICO AL DEL HISTORIAL) 🔥
+  // 🔥 EXPORTADOR EXCEL ACTUALIZADO CON MOVIMIENTOS DE CAJA Y ARQUEO 🔥
   // =========================================================================
   const exportarExcel = () => {
     let tablaHTML = `
@@ -38,13 +47,14 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
         <thead>
           <tr>
             <th colspan="7" style="background:#1e1b4b; color:#ffffff; font-size:16px; padding:15px;">
-              REPORTE DE VENTAS Y PROPINAS CORTE Z — ${folioTurno}
+              REPORTE DE VENTAS, MOVIMIENTOS Y ARQUEO CORTE Z — ${folioTurno}
             </th>
           </tr>
           <tr style="background:#f1f5f9;">
             <td colspan="7" style="padding:8px;"><b>Corte Generado:</b> ${fechaCorte}</td>
           </tr>
           <tr><td colspan="7"></td></tr>
+          <tr><th colspan="7" style="background:#4338ca; color:white; padding:8px; text-align:left;">DETALLE DE VENTAS (COMANDAS LIQUIDADAS)</th></tr>
           <tr style="background:#cbd5e1; font-weight:bold;">
             <th style="padding:10px; width:80px;">Mesa</th>
             <th style="padding:10px; width:120px;">Atendió</th>
@@ -89,13 +99,40 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
       });
     }
 
+    // TABLA DE MOVIMIENTOS EN EXCEL
     tablaHTML += `
         </tbody>
         <tfoot>
           <tr><td colspan="7"></td></tr>
+          <tr><th colspan="7" style="background:#be123c; color:white; padding:8px; text-align:left;">DETALLE DE MOVIMIENTOS MANUALES DE CAJA</th></tr>
+          <tr style="background:#f1f5f9; font-weight:bold;">
+            <th colspan="2" style="padding:8px;">Tipo</th>
+            <th colspan="3" style="padding:8px;">Concepto / Autorizó</th>
+            <th colspan="2" style="padding:8px; text-align:right;">Monto</th>
+          </tr>
+    `;
+
+    if (movimientosLista.length === 0) {
+      tablaHTML += `<tr><td colspan="7" style="padding:10px; text-align:center; font-style:italic;">Sin movimientos manuales.</td></tr>`;
+    } else {
+      movimientosLista.forEach(m => {
+        const esEntrada = m.tipo === 'entrada';
+        tablaHTML += `
+          <tr>
+            <td colspan="2" style="padding:8px; font-weight:bold; color:${esEntrada ? '#16a34a' : '#dc2626'}">${esEntrada ? 'ENTRADA / FONDO' : 'SALIDA / PAGO'}</td>
+            <td colspan="3" style="padding:8px;">${m.concepto}</td>
+            <td colspan="2" style="padding:8px; text-align:right; font-weight:bold; color:${esEntrada ? '#16a34a' : '#dc2626'}">${esEntrada ? '+' : '-'}$${parseFloat(m.monto).toFixed(2)}</td>
+          </tr>
+        `;
+      });
+    }
+
+    // RESUMEN MATEMÁTICO EN EXCEL
+    tablaHTML += `
+          <tr><td colspan="7"></td></tr>
           
           <tr>
-            <td colspan="5" rowspan="3" style="vertical-align: middle; text-align: center; padding: 8px; background:#f1f5f9;"><b>RESUMEN DEL NEGOCIO</b></td>
+            <td colspan="5" rowspan="3" style="vertical-align: middle; text-align: center; padding: 8px; background:#f1f5f9;"><b>RESUMEN DEL NEGOCIO (VENTAS VÍA POS)</b></td>
             <td style="font-weight:bold; text-align:right; background:#f8fafc;">Ventas Efectivo:</td>
             <td style="text-align:right; background:#f8fafc;">$${realEfectivoVenta.toFixed(2)}</td>
           </tr>
@@ -123,6 +160,26 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
             <td style="font-weight:black; text-align:right; background:#fef3c7; color:#78350f;">TOTAL PROPINAS:</td>
             <td style="font-weight:black; text-align:right; background:#fef3c7; color:#b45309; font-size:14px;">$${totalPropinasRecibidas.toFixed(2)}</td>
           </tr>
+
+          <tr><td colspan="7"></td></tr>
+
+          <tr>
+            <td colspan="5" rowspan="4" style="vertical-align: middle; text-align: center; padding: 8px; background:#f0fdf4;"><b>ARQUEO Y AUDITORÍA DE CAJA GAVETA</b></td>
+            <td style="font-weight:bold; text-align:right; background:#f0fdf4; color:#166534;">Ingresos Efectivo POS (+):</td>
+            <td style="text-align:right; background:#f0fdf4; color:#166534;">$${(realEfectivoVenta + realEfectivoPropina).toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="font-weight:bold; text-align:right; background:#f0fdf4; color:#166534;">Fondos Manuales Entrantes (+):</td>
+            <td style="text-align:right; background:#f0fdf4; color:#166534;">$${fondoYEntradas.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="font-weight:bold; text-align:right; background:#fef2f2; color:#991b1b;">Salidas y Pagos de Caja (-):</td>
+            <td style="text-align:right; background:#fef2f2; color:#991b1b;">$${pagosYSalidas.toFixed(2)}</td>
+          </tr>
+          <tr>
+            <td style="font-weight:black; text-align:right; background:#dcfce7; color:#14532d;">EFECTIVO ESPERADO EN CAJA:</td>
+            <td style="font-weight:black; text-align:right; background:#dcfce7; color:#15803d; font-size:16px;">$${efectivoFisicoEsperado.toFixed(2)}</td>
+          </tr>
         </tfoot>
       </table>
     `;
@@ -132,7 +189,7 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `CorteZ_${folioTurno}.xls`;
+    a.download = `CorteZ_Arqueo_${folioTurno}.xls`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -173,20 +230,26 @@ export default function ModalCorteZ({ isOpen, onClose, onConfirm, datos }) {
             <div className="flex justify-between items-end text-xs font-bold mt-1 text-amber-400 border-t border-dashed border-slate-700 pt-1"><span className="uppercase">Total a repartir a Meseros</span><span>${totalPropinasRecibidas.toFixed(2)}</span></div>
           </div>
 
-          {/* DESGLOSE CON SCROLL DE LAS MESAS COBRADAS */}
-          <div className="flex-1 overflow-y-auto pt-3 space-y-1.5 scrollbar-thin scrollbar-thumb-slate-800 pr-1">
-            <span className="text-[9px] text-indigo-400 font-bold uppercase tracking-widest block mb-1">Desglose de Mesas del Turno:</span>
-            {ventasLista.length === 0 ? (
-              <p className="text-[10px] text-slate-600 italic text-center py-2">No hay detalle de mesas disponible</p>
-            ) : (
-              ventasLista.map((v, i) => (
-                <div key={i} className="flex justify-between items-center bg-slate-900/40 p-1.5 rounded text-[11px] text-slate-400">
-                  <span className="truncate max-w-[170px]">🪑 <b>{v.numMesa || v.num_mesa}</b>: {v.cliente} ({v.personas}p)</span>
-                  <span className="text-slate-200 font-bold">${Number(v.total).toFixed(2)}</span>
-                </div>
-              ))
-            )}
+          {/* ARQUEO DE CAJA FÍSICO */}
+          <div className="mt-3 p-3 bg-slate-900/50 rounded-xl border border-slate-700/50 shrink-0">
+            <div className="text-[9px] font-black text-white uppercase tracking-widest text-center mb-2">AUDITORÍA Y ARQUEO FÍSICO DE GAVETA</div>
+            
+            <div className="flex justify-between items-end text-[10px] text-emerald-400/80 mb-1">
+              <span>Ingresos en Efectivo (Ventas+Fondo):</span>
+              <span>+ ${(realEfectivoVenta + realEfectivoPropina + fondoYEntradas).toFixed(2)}</span>
+            </div>
+            
+            <div className="flex justify-between items-end text-[10px] text-rose-400/80 mb-2 pb-2 border-b border-slate-700/50">
+              <span>Salidas y Pagos de Caja:</span>
+              <span>- ${pagosYSalidas.toFixed(2)}</span>
+            </div>
+
+            <div className="flex justify-between items-center bg-emerald-500/10 border border-emerald-500/20 px-2 py-1.5 rounded-lg">
+              <span className="text-[10px] font-black text-emerald-500 uppercase">EFECTIVO ESPERADO:</span>
+              <span className="text-lg font-black text-emerald-400">${efectivoFisicoEsperado.toFixed(2)}</span>
+            </div>
           </div>
+
         </div>
 
         {/* ADVERTENCIA */}

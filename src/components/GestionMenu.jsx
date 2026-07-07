@@ -10,12 +10,18 @@ export default function GestionMenu() {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [mensaje, setMensaje] = useState(null);
 
-  // Catálogo de Inventario para armar recetas
   const [inventario, setInventario] = useState([]);
   
-  // Selectores para armar el Escandallo (Receta)
   const [ingSeleccionado, setIngSeleccionado] = useState('');
   const [cantidadIng, setCantidadIng] = useState('');
+
+  // 🔥 NUEVO ESTADO PARA PESTAÑAS EN EL MODAL 🔥
+  const [pestañaActiva, setPestañaActiva] = useState('basico'); // 'basico' | 'promo'
+
+  const diasSemana = [
+    { id: 1, label: 'Lun' }, { id: 2, label: 'Mar' }, { id: 3, label: 'Mié' },
+    { id: 4, label: 'Jue' }, { id: 5, label: 'Vie' }, { id: 6, label: 'Sáb' }, { id: 0, label: 'Dom' }
+  ];
 
   const [form, setForm] = useState({ 
     id: null, 
@@ -24,7 +30,9 @@ export default function GestionMenu() {
     precio: '', 
     imagen: '', 
     descripcion: '',
-    receta: [] // 🔥 AQUÍ SE GUARDAN LOS INGREDIENTES 🔥
+    receta: [],
+    // 🔥 ESTADO DE HAPPY HOUR 🔥
+    promocion: { activo: false, dias: [], inicio: '00:00', fin: '23:59', precio_promo: '' }
   });
 
   const BASE_URL = `http://${window.location.hostname}:3000/api`;
@@ -62,9 +70,6 @@ export default function GestionMenu() {
 
   const productosFiltrados = productos.filter(p => categoriaActiva === 'Todas' || p.categoria === categoriaActiva);
 
-  // =========================================================================
-  // 🔥 MOTOR EDITORIAL: GENERADOR DE MENÚ DE CARTA CLÁSICO PARA EL SALÓN 🔥
-  // =========================================================================
   const handleImprimirMenuCarta = async () => {
     if (!productos || productos.length === 0) return alert("El menú no tiene platillos registrados.");
 
@@ -323,9 +328,6 @@ export default function GestionMenu() {
     }
   };
 
-  // =========================================================================
-  // 🔥 LÓGICA DEL CONSTRUCTOR DE RECETAS 🔥
-  // =========================================================================
   const agregarIngrediente = () => {
     if (!ingSeleccionado || !cantidadIng || parseFloat(cantidadIng) <= 0) return;
     
@@ -358,12 +360,34 @@ export default function GestionMenu() {
     });
   };
 
+  // 🔥 EVENTO QUE MANEJA LOS DÍAS SELECCIONADOS DE LA PROMOCIÓN 🔥
+  const toggleDiaPromo = (diaId) => {
+    setForm(prev => {
+      const diasActuales = prev.promocion.dias || [];
+      const nuevosDias = diasActuales.includes(diaId) 
+        ? diasActuales.filter(d => d !== diaId) 
+        : [...diasActuales, diaId];
+      return { ...prev, promocion: { ...prev.promocion, dias: nuevosDias } };
+    });
+  };
+
+  // 🔥 GUARDAR INYECTANDO LA PROMOCIÓN 🔥
   const guardarPlatillo = async (e) => {
     e.preventDefault();
+    if (!form.nombre || !form.precio) return alert("Nombre y precio son obligatorios.");
+
     const esNuevo = !form.id;
     const url = esNuevo ? `${BASE_URL}/menu` : `${BASE_URL}/menu/${form.id}`;
     
-    const payload = esNuevo ? { ...form, orden: productos.length } : form;
+    const payload = {
+      ...form,
+      precio: parseFloat(form.precio) || 0,
+      orden: esNuevo ? productos.length : form.orden,
+      promocion: {
+        ...form.promocion,
+        precio_promo: parseFloat(form.promocion.precio_promo) || 0
+      }
+    };
 
     try {
       const res = await fetch(url, {
@@ -373,7 +397,7 @@ export default function GestionMenu() {
       });
       if (res.ok) {
         cargarCarta();
-        mostrarNotificacion(esNuevo ? '¡Plato añadido a la carta! 🍲' : '¡Receta modificada! ✍️');
+        mostrarNotificacion(esNuevo ? '¡Plato añadido a la carta! 🍲' : '¡Plato modificado! ✍️');
         setModalAbierto(false);
       }
     } catch (err) { alert("Error de red al guardar"); }
@@ -390,25 +414,30 @@ export default function GestionMenu() {
     } catch (e) { alert("Error al eliminar"); }
   };
 
+  // 🔥 APERTURA DE MODAL INYECTANDO PROMOCIONES Y RESETEANDO PESTAÑA 🔥
   const abrirModal = (prod = null) => {
     if (prod) {
+      let promoMapeada = { activo: false, dias: [], inicio: '00:00', fin: '23:59', precio_promo: '' };
+      if (prod.promocion) {
+        try { promoMapeada = typeof prod.promocion === 'string' ? JSON.parse(prod.promocion) : prod.promocion; } 
+        catch (e) {}
+      }
+
       setForm({
         ...prod,
-        receta: prod.receta || [] // Si no tiene receta, carga un arreglo vacío
+        receta: typeof prod.receta === 'string' ? JSON.parse(prod.receta || '[]') : (prod.receta || []),
+        promocion: promoMapeada
       });
     } else {
       setForm({ 
-        id: null, 
-        nombre: '', 
-        categoria: categoriaActiva === 'Todas' ? 'Platos Fuertes' : categoriaActiva, 
-        precio: '', 
-        imagen: '', 
-        descripcion: '',
-        receta: [] 
+        id: null, nombre: '', categoria: categoriaActiva === 'Todas' ? 'Platos Fuertes' : categoriaActiva, 
+        precio: '', imagen: '', descripcion: '', receta: [],
+        promocion: { activo: false, dias: [], inicio: '00:00', fin: '23:59', precio_promo: '' }
       });
     }
     setIngSeleccionado('');
     setCantidadIng('');
+    setPestañaActiva('basico');
     setModalAbierto(true);
   };
 
@@ -480,6 +509,13 @@ export default function GestionMenu() {
             {productosFiltrados.map((prod, index) => {
               const esArrastrado = arrastrandoIdx === index;
 
+              // Determinar visualmente si este platillo tiene promo
+              let promoActivaIcon = false;
+              try {
+                const promo = typeof prod.promocion === 'string' ? JSON.parse(prod.promocion) : prod.promocion;
+                promoActivaIcon = promo?.activo;
+              } catch(e){}
+
               return (
                 <div
                   key={prod.id}
@@ -492,6 +528,11 @@ export default function GestionMenu() {
                     esArrastrado ? 'border-dashed border-[#881337] bg-[#fdfaf5]' : 'border-[#E4D9C5]'
                   }`}
                 >
+                  {/* 🔥 BADGE DE PROMO EN EL EDITOR 🔥 */}
+                  {promoActivaIcon && (
+                    <div className="absolute top-0 right-0 z-30 bg-[#881337] text-white text-[8px] font-black px-2 py-0.5 rounded-bl-lg shadow-lg">⭐ HAPPY HOUR PROG.</div>
+                  )}
+
                   <div className="absolute top-2.5 right-2.5 z-20 bg-[#881337] text-[#FAF6EE] font-serif font-bold text-xs tracking-wider px-3 py-0.5 rounded-full shadow">
                     ${Number(prod.precio || 0).toFixed(2)}
                   </div>
@@ -518,7 +559,7 @@ export default function GestionMenu() {
                     </p>
                     
                     {/* ETIQUETA VISUAL DEL ESCANDALLO */}
-                    {prod.receta && prod.receta.length > 0 && (
+                    {prod.receta && typeof prod.receta !== 'string' && prod.receta.length > 0 && (
                       <span className="mt-2 text-[9px] font-black tracking-widest uppercase text-[#5b0d25] bg-[#881337]/10 px-2 py-0.5 rounded border border-[#881337]/20 w-fit">
                         📦 {prod.receta.length} insumos
                       </span>
@@ -555,112 +596,190 @@ export default function GestionMenu() {
 
       </div>
 
-      {/* --- MODAL DOBLE DE EDICIÓN Y ESCANDALLOS --- */}
+      {/* --- MODAL DOBLE DE EDICIÓN, ESCANDALLOS Y PROMOCIONES --- */}
       {modalAbierto && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#FAF6EE] border-4 border-[#E8DFC9] rounded-2xl max-w-4xl w-full flex flex-col shadow-2xl animate-fade-in max-h-[90vh]">
             
-            <div className="p-5 border-b border-[#D2C5AB] flex justify-between items-center bg-[#E8DFC9]/30">
+            <div className="p-5 border-b border-[#D2C5AB] flex justify-between items-center bg-[#E8DFC9]/30 shrink-0">
               <h2 className="text-lg font-serif font-black text-[#881337] uppercase">
-                {form.id ? '✏️ Modificar Platillo y Receta' : '📜 Nuevo Platillo y Receta'}
+                {form.id ? '✏️ Editor de Platillo' : '📜 Nuevo Platillo'}
               </h2>
-              <button onClick={() => setModalAbierto(false)} className="text-[#5C483F] hover:text-[#881337] font-black cursor-pointer">✕</button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
               
-              {/* COLUMNA 1: DATOS COMERCIALES */}
-              <div className="space-y-4">
-                <h3 className="text-xs font-serif font-black tracking-widest text-[#5b0d25] uppercase border-b border-[#D2C5AB] pb-2 mb-4">Detalles Comerciales</h3>
-                
-                <div>
-                  <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">Nombre</label>
-                  <input type="text" required value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#2D231E] outline-none focus:border-[#881337]" placeholder="Ej. Hamburguesa Doble" />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">Categoría</label>
-                    <select value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#2D231E] outline-none focus:border-[#881337]">
-                      {categorias.filter(c=>c!=='Todas').map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">Precio ($)</label>
-                    <input type="number" step="0.01" required value={form.precio} onChange={e => setForm({...form, precio: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#881337] font-mono font-bold outline-none focus:border-[#881337]" placeholder="0.00" />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">URL de Imagen</label>
-                  <input type="url" value={form.imagen} onChange={e => setForm({...form, imagen: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#2D231E] outline-none focus:border-[#881337]" placeholder="https://..." />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">Descripción</label>
-                  <textarea rows="2" value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#2D231E] outline-none focus:border-[#881337]" />
-                </div>
+              {/* 🔥 TABS (PESTAÑAS) 🔥 */}
+              <div className="flex bg-[#E8DFC9]/50 rounded-lg p-1">
+                <button onClick={() => setPestañaActiva('basico')} className={`px-4 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors ${pestañaActiva === 'basico' ? 'bg-[#881337] text-white shadow' : 'text-[#5C483F] hover:text-[#881337]'}`}>Receta / Básico</button>
+                <button onClick={() => setPestañaActiva('promo')} className={`px-4 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1 ${pestañaActiva === 'promo' ? 'bg-[#881337] text-white shadow' : 'text-[#5C483F] hover:text-[#881337]'}`}><span>⭐</span> Promo / Horarios</button>
               </div>
 
-              {/* COLUMNA 2: CONSTRUCTOR DE RECETAS (ESCANDALLOS) */}
-              <div className="bg-[#E8DFC9]/30 p-5 rounded-2xl border border-[#D2C5AB] flex flex-col h-full">
-                <h3 className="text-xs font-serif font-black tracking-widest text-[#5b0d25] uppercase border-b border-[#D2C5AB] pb-2 mb-4">Constructor de Receta (Almacén)</h3>
-                
-                <div className="flex gap-2 mb-4">
-                  <select value={ingSeleccionado} onChange={e => setIngSeleccionado(e.target.value)} className="flex-1 bg-white border border-[#D2C5AB] rounded-xl p-2.5 text-xs text-[#2D231E] outline-none font-sans font-bold">
-                    <option value="">-- Buscar Insumo --</option>
-                    {inventario.map(inv => (
-                      <option key={inv.id} value={inv.id}>{inv.item} ({inv.unidad})</option>
-                    ))}
-                  </select>
-                  
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    placeholder="Cant." 
-                    value={cantidadIng} 
-                    onChange={e => setCantidadIng(e.target.value)} 
-                    className="w-20 bg-white border border-[#D2C5AB] rounded-xl p-2.5 text-xs text-center text-[#881337] font-mono font-bold outline-none" 
-                  />
-                  
-                  <button type="button" onClick={agregarIngrediente} className="bg-[#5C483F] hover:bg-[#2D231E] text-white font-black px-4 rounded-xl text-xs cursor-pointer">+</button>
-                </div>
+              <button onClick={() => setModalAbierto(false)} className="text-[#5C483F] hover:text-[#881337] font-black cursor-pointer text-xl">✕</button>
+            </div>
 
-                <div className="flex-1 bg-white border border-[#D2C5AB] rounded-xl p-3 overflow-y-auto min-h-[150px]">
-                  {form.receta.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-[#A39178] text-center font-serif">
-                      <span className="text-3xl mb-2">🍽️</span>
-                      <p className="text-[10px] uppercase font-bold tracking-widest">Sin ingredientes</p>
-                      <p className="text-[9px] mt-1 italic">Vender esto no descontará nada del almacén.</p>
+            <div className="flex-1 overflow-y-auto p-6 pergamino-scroll">
+              
+              {pestañaActiva === 'basico' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in h-full">
+                  {/* COLUMNA 1: DATOS COMERCIALES */}
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-serif font-black tracking-widest text-[#5b0d25] uppercase border-b border-[#D2C5AB] pb-2 mb-4">Detalles Comerciales</h3>
+                    
+                    <div>
+                      <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">Nombre</label>
+                      <input type="text" required value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#2D231E] outline-none focus:border-[#881337]" placeholder="Ej. Hamburguesa Doble" />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">Categoría</label>
+                        <select value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#2D231E] outline-none focus:border-[#881337]">
+                          {categorias.filter(c=>c!=='Todas').map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">Precio Normal ($)</label>
+                        <input type="number" step="0.01" required value={form.precio} onChange={e => setForm({...form, precio: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#881337] font-mono font-bold outline-none focus:border-[#881337]" placeholder="0.00" />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">URL de Imagen</label>
+                      <input type="url" value={form.imagen} onChange={e => setForm({...form, imagen: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#2D231E] outline-none focus:border-[#881337]" placeholder="https://..." />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-serif uppercase font-bold text-[#5C483F] mb-1">Descripción</label>
+                      <textarea rows="3" value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} className="w-full bg-white border border-[#D2C5AB] rounded-xl p-3 text-sm text-[#2D231E] outline-none focus:border-[#881337] resize-none" />
+                    </div>
+                  </div>
+
+                  {/* COLUMNA 2: CONSTRUCTOR DE RECETAS (ESCANDALLOS) */}
+                  <div className="bg-[#E8DFC9]/30 p-5 rounded-2xl border border-[#D2C5AB] flex flex-col h-full">
+                    <h3 className="text-xs font-serif font-black tracking-widest text-[#5b0d25] uppercase border-b border-[#D2C5AB] pb-2 mb-4">Constructor de Receta (Almacén)</h3>
+                    
+                    <div className="flex gap-2 mb-4">
+                      <select value={ingSeleccionado} onChange={e => setIngSeleccionado(e.target.value)} className="flex-1 bg-white border border-[#D2C5AB] rounded-xl p-2.5 text-xs text-[#2D231E] outline-none font-sans font-bold">
+                        <option value="">-- Buscar Insumo --</option>
+                        {inventario.map(inv => (
+                          <option key={inv.id} value={inv.id}>{inv.item} ({inv.unidad})</option>
+                        ))}
+                      </select>
+                      
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        placeholder="Cant." 
+                        value={cantidadIng} 
+                        onChange={e => setCantidadIng(e.target.value)} 
+                        className="w-20 bg-white border border-[#D2C5AB] rounded-xl p-2.5 text-xs text-center text-[#881337] font-mono font-bold outline-none" 
+                      />
+                      
+                      <button type="button" onClick={agregarIngrediente} className="bg-[#5C483F] hover:bg-[#2D231E] text-white font-black px-4 rounded-xl text-xs cursor-pointer">+</button>
+                    </div>
+
+                    <div className="flex-1 bg-white border border-[#D2C5AB] rounded-xl p-3 overflow-y-auto min-h-[150px] pergamino-scroll">
+                      {form.receta.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-[#A39178] text-center font-serif">
+                          <span className="text-3xl mb-2">🍽️</span>
+                          <p className="text-[10px] uppercase font-bold tracking-widest">Sin ingredientes</p>
+                          <p className="text-[9px] mt-1 italic">Vender esto no descontará nada del almacén.</p>
+                        </div>
+                      ) : (
+                        <ul className="space-y-2">
+                          {form.receta.map((r, i) => (
+                            <li key={i} className="flex justify-between items-center bg-[#FAF6EE] border border-[#E8DFC9] p-2.5 rounded-lg">
+                              <span className="text-xs font-bold text-[#2D231E] font-sans">
+                                {r.nombre}
+                              </span>
+                              <div className="flex items-center gap-3">
+                                <span className="text-[10px] font-mono font-black text-[#881337] bg-[#881337]/10 px-2 py-0.5 rounded border border-[#881337]/20">
+                                  {r.cantidad} {r.unidad}
+                                </span>
+                                <button type="button" onClick={() => quitarIngrediente(r.id_ingrediente)} className="text-rose-500 hover:text-rose-700 font-bold text-xs cursor-pointer">✖</button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 🔥 PESTAÑA: HAPPY HOUR / PROMOCIONES 🔥 */}
+              {pestañaActiva === 'promo' && (
+                <div className="space-y-6 animate-fade-in w-full max-w-xl mx-auto h-full flex flex-col">
+                  
+                  <div className="bg-[#881337]/10 border border-[#881337]/30 p-5 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <h3 className="text-[#881337] font-black font-serif text-lg flex items-center gap-2"><span>⭐</span> Activar Happy Hour</h3>
+                      <p className="text-[10px] text-[#5C483F] mt-1 uppercase tracking-widest font-bold">El precio cambiará automáticamente los días y horas indicados.</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" checked={form.promocion.activo} onChange={e => setForm({...form, promocion: {...form.promocion, activo: e.target.checked}})} />
+                      <div className="w-14 h-7 bg-[#D2C5AB] rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-[#881337]"></div>
+                    </label>
+                  </div>
+
+                  {form.promocion.activo ? (
+                    <div className="bg-white border border-[#D2C5AB] p-6 rounded-2xl space-y-6 flex-1 shadow-sm">
+                      
+                      <div>
+                        <label className="text-[10px] font-black font-serif uppercase tracking-widest text-[#5C483F] mb-3 block text-center">Días de la semana aplicables</label>
+                        <div className="flex justify-center gap-2 flex-wrap">
+                          {diasSemana.map(dia => {
+                            const activo = form.promocion.dias.includes(dia.id);
+                            return (
+                              <button 
+                                key={dia.id} type="button" onClick={() => toggleDiaPromo(dia.id)}
+                                className={`w-12 h-12 rounded-xl font-black text-xs transition-all shadow-sm font-sans ${activo ? 'bg-[#881337] text-white ring-2 ring-[#881337]/30 scale-110' : 'bg-[#FAF6EE] text-[#5C483F] border border-[#D2C5AB] hover:bg-[#E8DFC9]'}`}
+                              >
+                                {dia.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-6 bg-[#FAF6EE] p-4 rounded-xl border border-[#D2C5AB]">
+                        <div>
+                          <label className="text-[10px] font-black font-serif uppercase tracking-widest text-[#5C483F] mb-2 block">Hora de Inicio (24h)</label>
+                          <input type="time" value={form.promocion.inicio} onChange={e => setForm({...form, promocion: {...form.promocion, inicio: e.target.value}})} className="w-full bg-white border border-[#D2C5AB] text-[#881337] font-black text-lg rounded-xl px-4 py-3 outline-none focus:border-[#881337] font-mono text-center shadow-inner" />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black font-serif uppercase tracking-widest text-[#5C483F] mb-2 block">Hora de Fin (24h)</label>
+                          <input type="time" value={form.promocion.fin} onChange={e => setForm({...form, promocion: {...form.promocion, fin: e.target.value}})} className="w-full bg-white border border-[#D2C5AB] text-[#881337] font-black text-lg rounded-xl px-4 py-3 outline-none focus:border-[#881337] font-mono text-center shadow-inner" />
+                        </div>
+                      </div>
+
+                      <div className="pt-2">
+                        <label className="text-[10px] font-black font-serif uppercase tracking-widest text-[#881337] mb-2 block text-center">Nuevo Precio de Promoción ($)</label>
+                        <div className="flex flex-col items-center gap-2">
+                          <input type="number" value={form.promocion.precio_promo} onChange={e => setForm({...form, promocion: {...form.promocion, precio_promo: e.target.value}})} placeholder="Ej. 60.00" className="w-48 bg-[#881337]/5 border-2 border-[#881337]/50 text-[#881337] font-black text-3xl rounded-2xl px-4 py-3 outline-none focus:border-[#881337] font-mono text-center shadow-inner" />
+                          <div className="text-xs text-[#5C483F] font-mono font-bold bg-white px-3 py-1 rounded-full border border-[#D2C5AB]">
+                            Precio Normal: <span className="line-through text-[#881337]">${parseFloat(form.precio || 0).toFixed(2)}</span>
+                          </div>
+                        </div>
+                      </div>
+
                     </div>
                   ) : (
-                    <ul className="space-y-2">
-                      {form.receta.map((r, i) => (
-                        <li key={i} className="flex justify-between items-center bg-[#FAF6EE] border border-[#E8DFC9] p-2.5 rounded-lg">
-                          <span className="text-xs font-bold text-[#2D231E] font-sans">
-                            {r.nombre}
-                          </span>
-                          <div className="flex items-center gap-3">
-                            <span className="text-[10px] font-mono font-black text-[#881337] bg-[#881337]/10 px-2 py-0.5 rounded border border-[#881337]/20">
-                              {r.cantidad} {r.unidad}
-                            </span>
-                            <button type="button" onClick={() => quitarIngrediente(r.id_ingrediente)} className="text-rose-500 hover:text-rose-700 font-bold text-xs cursor-pointer">✖</button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="flex-1 flex flex-col items-center justify-center text-[#A39178] opacity-60">
+                      <span className="text-6xl mb-4">💤</span>
+                      <p className="font-serif font-bold text-sm uppercase tracking-widest">Promoción Desactivada</p>
+                      <p className="text-xs italic mt-1 text-center max-w-xs">Enciende el interruptor superior para configurar los horarios y el nuevo precio de este producto.</p>
+                    </div>
                   )}
                 </div>
-              </div>
+              )}
 
             </div>
 
-            <div className="p-5 border-t border-[#D2C5AB] bg-[#E8DFC9]/30 flex justify-end gap-3">
+            <div className="p-5 border-t border-[#D2C5AB] bg-[#E8DFC9]/30 flex justify-end gap-3 shrink-0">
               <button onClick={() => setModalAbierto(false)} className="px-6 py-3.5 bg-white border border-[#D2C5AB] hover:bg-[#E8DFC9] text-[#5C483F] font-serif font-bold rounded-xl text-xs uppercase tracking-widest cursor-pointer transition-colors">
                 Cancelar
               </button>
               <button onClick={guardarPlatillo} className="px-8 py-3.5 bg-[#881337] hover:bg-[#700f2b] text-white font-serif font-black rounded-xl text-xs uppercase tracking-widest shadow-lg shadow-[#881337]/30 cursor-pointer transition-transform active:scale-95">
-                Guardar Platillo
+                💾 Guardar Platillo
               </button>
             </div>
             

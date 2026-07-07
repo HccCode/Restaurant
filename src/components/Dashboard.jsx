@@ -1,17 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import HistorialCortes from './HistorialCortes';
 import ModalCorteZ from './ModalCorteZ';
 
-export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
-  const [pestañaActiva, setPestañaActiva] = useState('en-vivo'); // 'en-vivo' | 'historial'
+export default function Dashboard({ reservaciones, onIniciarCorteZ, usuario }) {
+  // 🔥 NUEVA PESTAÑA AGREGADA: 'liquidacion' 🔥
+  const [pestañaActiva, setPestañaActiva] = useState('en-vivo'); // 'en-vivo' | 'liquidacion' | 'cancelaciones' | 'historial'
   const [ventasTabla, setVentasTabla] = useState([]);
   
+  const [cancelacionesTabla, setCancelacionesTabla] = useState([]);
+
   // Estados para el Buscador de Tickets
   const [filtroFolio, setFiltroFolio] = useState('');
   const [filtroFecha, setFiltroFecha] = useState('');
 
   // Control del modal de reimpresión interno
   const [modalReimpresion, setModalReimpresion] = useState({ isOpen: false, venta: null, config: null, platillos: [] });
+
+  const [modalMovimientos, setModalMovimientos] = useState({ isOpen: false, tipo: 'salida', monto: '', concepto: '' });
+  const tienePermisoCaja = ['Administrador', 'Admin', 'Gerente', 'Subgerente'].includes(usuario?.rol || 'Administrador');
 
   const cargarVentas = () => {
     const url = new URL(`http://${window.location.hostname}:3000/api/finanzas/historial-ventas`);
@@ -28,11 +34,16 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
         }
       })
       .catch(e => console.error('Error al leer de SQL:', e));
+
+    fetch(`http://${window.location.hostname}:3000/api/cancelaciones`)
+      .then(r => r.json())
+      .then(data => setCancelacionesTabla(data))
+      .catch(e => console.error(e));
   };
 
   useEffect(() => { cargarVentas(); }, [reservaciones]); 
 
-  // KPIs calculados sin filtros
+  // KPIs calculados
   const traficoTotal = reservaciones.length;
   const sentados = reservaciones.filter(r => r.estado === 'en-curso').length;
   const enLobby = reservaciones.filter(r => r.estado === 'pendientes').length;
@@ -53,8 +64,140 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
   const modoBusqueda = filtroFolio !== '' || filtroFecha !== '';
 
   // =========================================================================
-  // PREPARADOR DEL MODAL INTERNO DE REIMPRESIÓN (CON PROPINAS Y MÉTODOS)
+  // 🔥 MOTOR MATEMÁTICO: LIQUIDACIÓN DE MESEROS 🔥
   // =========================================================================
+  const liquidacionPorMesero = useMemo(() => {
+    // Solo tomamos las ventas que NO han pasado por un Corte Z
+    const ventasNoCortadas = ventasTabla.filter(v => v.corte_aplicado === false);
+    
+    const agrupado = ventasNoCortadas.reduce((acc, venta) => {
+      const m = venta.mesero || 'Desconocido';
+      if (!acc[m]) {
+        acc[m] = { 
+          mesero: m, mesas: 0, totalVendido: 0, 
+          efectivo: 0, tarjeta: 0, propinaEfectivo: 0, propinaTarjeta: 0 
+        };
+      }
+      acc[m].mesas += 1;
+      acc[m].totalVendido += parseFloat(venta.total || 0);
+      acc[m].efectivo += parseFloat(venta.pago_efectivo || 0);
+      acc[m].tarjeta += parseFloat(venta.pago_tarjeta || 0);
+      acc[m].propinaEfectivo += parseFloat(venta.propina_efectivo || 0);
+      acc[m].propinaTarjeta += parseFloat(venta.propina_tarjeta || 0);
+      return acc;
+    }, {});
+
+    return Object.values(agrupado).sort((a, b) => b.totalVendido - a.totalVendido);
+  }, [ventasTabla]);
+
+  const imprimirLiquidacionMesero = async (liq) => {
+    let config = { nombre_negocio: 'Sabor.io Restaurante', rfc: 'XAXX010101000', direccion: '', telefono: '', iva: 16 };
+    try {
+      const res = await fetch(`http://${window.location.hostname}:3000/api/configuracion`);
+      if (res.ok) config = await res.json();
+    } catch (e) {}
+
+    const balanceCaja = liq.efectivo - liq.propinaTarjeta;
+    let textoBalance = "";
+    if (balanceCaja > 0) {
+      textoBalance = `<div style="font-size:12px; font-weight:bold; margin-top:8px; border:2px solid #000; padding:4px;">A ENTREGAR A CAJA: $${balanceCaja.toFixed(2)}</div>`;
+    } else if (balanceCaja < 0) {
+      textoBalance = `<div style="font-size:12px; font-weight:bold; margin-top:8px; border:2px solid #000; padding:4px;">CAJA LE DEBE PAGAR: $${Math.abs(balanceCaja).toFixed(2)}</div>`;
+    } else {
+      textoBalance = `<div style="font-size:12px; font-weight:bold; margin-top:8px; border:2px dashed #000; padding:4px;">CUENTAS EN CEROS: $0.00</div>`;
+    }
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const fechaHoy = new Date().toLocaleString('es-MX', { hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric' });
+
+    const htmlContent = `
+      <html>
+        <head>
+          <title>Liquidación - ${liq.mesero}</title>
+          <style>
+            body { font-family: 'Courier New', Courier, monospace; width: 260px; margin: 0; padding: 10px; color: #000; font-size: 11px; }
+            .center { text-align: center; }
+            .dash { border-top: 1px dashed #000; margin: 8px 0; }
+            .flex { display: flex; justify-content: space-between; }
+            .title { font-size: 14px; font-weight: bold; margin-bottom: 2px; text-transform: uppercase; }
+          </style>
+        </head>
+        <body>
+          <div class="center">
+            <div class="title">${config.nombre_negocio}</div>
+            <div>LIQUIDACIÓN INDIVIDUAL</div>
+            <div><b>MESERO:</b> ${liq.mesero}</div>
+            <div>${fechaHoy}</div>
+          </div>
+          <div class="dash"></div>
+          <div class="flex"><span>Mesas Atendidas:</span><span>${liq.mesas}</span></div>
+          <div class="flex"><span>Venta Bruta Generada:</span><span>$${liq.totalVendido.toFixed(2)}</span></div>
+          <div class="dash"></div>
+          <div class="center" style="font-weight:bold; margin-bottom:4px;">DESGLOSE DE COBROS</div>
+          <div class="flex"><span>Efectivo Recibido:</span><span>$${liq.efectivo.toFixed(2)}</span></div>
+          <div class="flex"><span>Tarjetas Cobradas:</span><span>$${liq.tarjeta.toFixed(2)}</span></div>
+          <div class="dash"></div>
+          <div class="center" style="font-weight:bold; margin-bottom:4px;">PROPINAS</div>
+          <div class="flex"><span>En Efectivo (Ya en mano):</span><span>$${liq.propinaEfectivo.toFixed(2)}</span></div>
+          <div class="flex"><span>En Tarjeta (Retenidas):</span><span>$${liq.propinaTarjeta.toFixed(2)}</span></div>
+          <div class="dash"></div>
+          <div class="center" style="margin-top:4px;">
+            <div>Fórmula: Efectivo - Propina Tarj.</div>
+            ${textoBalance}
+          </div>
+          <div class="dash"></div>
+          <div class="center" style="margin-top: 20px;">
+            ___________________________<br>
+            Firma de Conformidad
+          </div>
+        </body>
+      </html>
+    `;
+
+    const doc = iframe.contentWindow || iframe.contentDocument.document || iframe.contentDocument;
+    doc.document.open();
+    doc.document.write(htmlContent);
+    doc.document.close();
+
+    iframe.contentWindow.focus();
+    setTimeout(() => {
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 500); 
+    }, 250);
+  };
+  // =========================================================================
+
+  const handleGuardarMovimiento = async () => {
+    if (!modalMovimientos.monto || !modalMovimientos.concepto) {
+      return alert("Por favor llena el monto y el concepto del movimiento.");
+    }
+    
+    try {
+      await fetch(`http://${window.location.hostname}:3000/api/movimientos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tipo: modalMovimientos.tipo,
+          monto: modalMovimientos.monto,
+          concepto: modalMovimientos.concepto,
+          usuario: usuario?.nombre || 'Administrador'
+        })
+      });
+      setModalMovimientos({ isOpen: false, tipo: 'salida', monto: '', concepto: '' });
+      alert(`Movimiento de ${modalMovimientos.tipo.toUpperCase()} registrado con éxito. Se incluirá en el próximo Corte Z.`);
+    } catch(e) {
+      alert("Error de red al guardar el movimiento en caja.");
+    }
+  };
+
   const handlePrepararReimpresion = async (venta) => {
     let config = { nombre_negocio: 'Sabor.io Restaurante', rfc: 'XAXX010101000', direccion: 'Av. De los Héroes 123', telefono: '686 555 1234', iva: 16, mensaje_ticket: '¡Gracias por su preferencia!' };
     try {
@@ -69,20 +212,13 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
       console.error("Error parseando platillos", e);
     }
 
-    setModalReimpresion({
-      isOpen: true,
-      venta,
-      config,
-      platillos
-    });
+    setModalReimpresion({ isOpen: true, venta, config, platillos });
   };
 
-  // 🔥 DISPARADOR DE IMPRESIÓN FÍSICA DIRECTA CON DESGLOSE DE PAGO 🔥
   const ejecutarImpresionFisica = () => {
     const { venta, config, platillos } = modalReimpresion;
     if (!venta) return;
 
-    // Extracción segura de datos financieros para el ticket histórico
     const pagoEfectivo = parseFloat(venta.pago_efectivo || 0);
     const pagoTarjeta = parseFloat(venta.pago_tarjeta || 0);
     const propEfectivo = parseFloat(venta.propina_efectivo || 0);
@@ -131,17 +267,21 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
             <tbody>
               ${platillos.map(p => `
                 <tr>
-                  <td style="padding: 2px 0;">${p.cantidad}x</td>
-                  <td style="padding: 2px 0;">${p.nombre}</td>
-                  <td style="text-align: right; padding: 2px 0;">$${(parseFloat(p.precio) * parseInt(p.cantidad)).toFixed(2)}</td>
+                  <td style="padding: 2px 0; vertical-align: top;">${p.cantidad}x</td>
+                  <td style="padding: 2px 0;">
+                    ${p.nombre}
+                    ${p.modificadores && p.modificadores.length > 0 ? `<div style="font-size:9px; color:#555; padding-left: 4px;">${p.modificadores.map(m => `+ ${m.nombre}`).join('<br>')}</div>` : ''}
+                  </td>
+                  <td style="text-align: right; padding: 2px 0; vertical-align: top;">$${(parseFloat(p.precio) * parseInt(p.cantidad)).toFixed(2)}</td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
           <div class="dash"></div>
           <div class="flex"><span>Subtotal:</span><span>$${parseFloat(venta.subtotal).toFixed(2)}</span></div>
+          ${venta.descuento > 0 ? `<div class="flex bold" style="color: #dc2626;"><span>Descuento / Cortesía:</span><span>-$${parseFloat(venta.descuento).toFixed(2)}</span></div>` : ''}
           <div class="flex"><span>I.V.A. (${config.iva}%):</span><span>$${parseFloat(venta.iva).toFixed(2)}</span></div>
-          ${tienePropina ? `<div class="flex"><span>Propina:</span><span>$${(propEfectivo + propTarjeta).toFixed(2)}</span></div>` : ''}
+          ${tienePropina ? `<div class="flex"><span>Propina Sugerida:</span><span>$${(propEfectivo + propTarjeta).toFixed(2)}</span></div>` : ''}
           <div class="flex bold" style="font-size: 12px; margin-top: 4px; padding-top: 4px; border-top: 1px solid #000;">
             <span>TOTAL PAGADO:</span><span>$${parseFloat(venta.total).toFixed(2)}</span>
           </div>
@@ -169,9 +309,41 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
   return (
     <div className="flex-1 p-6 md:p-8 overflow-y-auto bg-[#070b16] text-slate-200 select-none font-sans relative">
       
-      {/* =========================================================================
-          🔥 MODAL INTERNO DE REIMPRESIÓN (HISTÓRICA) 🔥
-          ========================================================================= */}
+      {/* MODAL DE CAJA (ENTRADAS Y SALIDAS) */}
+      {modalMovimientos.isOpen && (
+        <div className="fixed inset-0 z-[600] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#0b1120] border border-slate-700 rounded-3xl p-6 md:p-8 max-w-sm w-full shadow-2xl flex flex-col relative overflow-hidden">
+            <header className="mb-5 text-center">
+              <span className="text-4xl block mb-2">💵</span>
+              <h2 className="text-xl font-black text-white tracking-tight">Movimiento de Caja</h2>
+              <p className="text-[11px] text-slate-400 mt-1 uppercase tracking-widest">Registra ingresos o retiros para el Corte Z</p>
+            </header>
+
+            <div className="flex bg-[#050812] rounded-xl border border-slate-800 p-1 mb-5">
+              <button onClick={() => setModalMovimientos({...modalMovimientos, tipo: 'salida'})} className={`flex-1 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all cursor-pointer ${modalMovimientos.tipo === 'salida' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}>Salida (Retiro)</button>
+              <button onClick={() => setModalMovimientos({...modalMovimientos, tipo: 'entrada'})} className={`flex-1 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-all cursor-pointer ${modalMovimientos.tipo === 'entrada' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'}`}>Entrada (Fondo)</button>
+            </div>
+
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">Monto ($)</label>
+                <input type="number" value={modalMovimientos.monto} onChange={e => setModalMovimientos({...modalMovimientos, monto: e.target.value})} placeholder="0.00" className="w-full bg-[#050812] border border-slate-700 text-white text-lg rounded-xl px-4 py-3 outline-none focus:border-indigo-500 font-mono text-center" />
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5 block">Concepto / Motivo</label>
+                <input type="text" value={modalMovimientos.concepto} onChange={e => setModalMovimientos({...modalMovimientos, concepto: e.target.value})} placeholder="Ej. Pago de garrafones, Fondo inicial..." className="w-full bg-[#050812] border border-slate-700 text-white text-sm rounded-xl px-4 py-3 outline-none focus:border-indigo-500 font-sans" />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setModalMovimientos({ isOpen: false, tipo: 'salida', monto: '', concepto: '' })} className="px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl uppercase tracking-widest text-[10px] cursor-pointer transition-colors">Cancelar</button>
+              <button onClick={handleGuardarMovimiento} className={`flex-1 font-black rounded-xl uppercase tracking-widest text-[10px] cursor-pointer transition-all shadow-lg text-white ${modalMovimientos.tipo === 'salida' ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/20' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/20'}`}>Registrar {modalMovimientos.tipo}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL INTERNO DE REIMPRESIÓN */}
       {modalReimpresion.isOpen && (
         <div className="fixed inset-0 z-[350] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl flex flex-col">
@@ -205,18 +377,24 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
                 <tbody>
                   {modalReimpresion.platillos.map((p, i) => (
                     <tr key={i}>
-                      <td className="py-0.5 font-bold text-slate-700">{p.cantidad}x</td>
-                      <td className="py-0.5 truncate max-w-[120px]">{p.nombre}</td>
-                      <td className="py-0.5 text-right font-bold">${(parseFloat(p.precio) * parseInt(p.cantidad)).toFixed(2)}</td>
+                      <td className="py-0.5 font-bold text-slate-700 vertical-align: top;">{p.cantidad}x</td>
+                      <td className="py-0.5">
+                        {p.nombre}
+                        {p.modificadores && p.modificadores.length > 0 ? 
+                          `<div style="font-size:9px; color:#555; padding-left: 4px;">
+                            ${p.modificadores.map(m => `+ ${m.nombre}`).join('<br>')}
+                          </div>` : ''}
+                      </td>
+                      <td className="py-0.5 text-right font-bold vertical-align: top;">${(parseFloat(p.precio) * parseInt(p.cantidad)).toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               <div className="border-t border-dashed border-slate-300 my-2"></div>
               <div className="flex justify-between"><span>Subtotal:</span><span>${parseFloat(modalReimpresion.venta?.subtotal || 0).toFixed(2)}</span></div>
+              {modalReimpresion.venta?.descuento > 0 && <div className="flex justify-between text-rose-600 font-bold"><span>Descuento / Cortesía:</span><span>-${parseFloat(modalReimpresion.venta?.descuento).toFixed(2)}</span></div>}
               <div className="flex justify-between"><span>I.V.A. ({modalReimpresion.config?.iva}%):</span><span>${parseFloat(modalReimpresion.venta?.iva || 0).toFixed(2)}</span></div>
               
-              {/* 🔥 RE-CALCULO DE PROPINAS EN VISTA PREVIA 🔥 */}
               {(parseFloat(modalReimpresion.venta?.propina_efectivo || 0) + parseFloat(modalReimpresion.venta?.propina_tarjeta || 0)) > 0 && (
                 <div className="flex justify-between"><span>Propina:</span><span>${(parseFloat(modalReimpresion.venta?.propina_efectivo || 0) + parseFloat(modalReimpresion.venta?.propina_tarjeta || 0)).toFixed(2)}</span></div>
               )}
@@ -233,7 +411,6 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
           </div>
         </div>
       )}
-      {/* ========================================================================= */}
 
       {/* CABECERA MAESTRA CON PESTAÑAS */}
       <header className="mb-8 flex flex-col md:flex-row md:justify-between md:items-end gap-6">
@@ -242,17 +419,34 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
           <p className="text-xs text-slate-400 mt-1">Indicadores de rendimiento, tickets liquidados y cortes fiscales.</p>
         </div>
         
-        <div className="flex bg-[#0b1120] p-1.5 rounded-2xl border border-slate-800 shrink-0 shadow-lg">
-          <button onClick={() => setPestañaActiva('en-vivo')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all ${pestañaActiva === 'en-vivo' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}>
-            📊 Turno en Vivo
-          </button>
-          <button onClick={() => setPestañaActiva('historial')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all ${pestañaActiva === 'historial' ? 'bg-[#5a4bfa] text-white shadow-lg shadow-indigo-500/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}>
-            📑 Cortes Z
-          </button>
+        <div className="flex items-center gap-4">
+          {tienePermisoCaja && (
+            <button 
+              onClick={() => setModalMovimientos({...modalMovimientos, isOpen: true})} 
+              className="px-5 py-2.5 bg-[#0b1120] border border-slate-700 hover:bg-slate-800 text-emerald-400 font-black rounded-xl text-[10px] uppercase tracking-widest transition-colors shadow-sm flex items-center gap-2 cursor-pointer"
+            >
+              <span className="text-sm">💵</span> Movimientos de Caja
+            </button>
+          )}
+
+          <div className="flex bg-[#0b1120] p-1.5 rounded-2xl border border-slate-800 shrink-0 shadow-lg overflow-x-auto scrollbar-none">
+            <button onClick={() => setPestañaActiva('en-vivo')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all cursor-pointer whitespace-nowrap ${pestañaActiva === 'en-vivo' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}>
+              📊 Turno
+            </button>
+            <button onClick={() => setPestañaActiva('liquidacion')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all cursor-pointer whitespace-nowrap ${pestañaActiva === 'liquidacion' ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}>
+              👥 Liquidación
+            </button>
+            <button onClick={() => setPestañaActiva('cancelaciones')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all cursor-pointer whitespace-nowrap ${pestañaActiva === 'cancelaciones' ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}>
+              🚫 Canceladas
+            </button>
+            <button onClick={() => setPestañaActiva('historial')} className={`px-4 py-2.5 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all cursor-pointer whitespace-nowrap ${pestañaActiva === 'historial' ? 'bg-[#5a4bfa] text-white shadow-lg shadow-indigo-500/30' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}>
+              📑 Cortes Z
+            </button>
+          </div>
         </div>
       </header>
 
-      {pestañaActiva === 'en-vivo' ? (
+      {pestañaActiva === 'en-vivo' && (
         <div className="animate-fade-in">
           {/* 4 TARJETAS OPERATIVAS */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
@@ -274,7 +468,6 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
             </div>
           </div>
 
-          {/* BLOQUE MAGENTA DE CIERRE DE CAJA */}
           <div className="bg-[#0b1120] border border-rose-950 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl relative overflow-hidden mb-8">
             <div className="absolute top-0 left-0 w-1 h-full bg-rose-600"></div>
             <div className="flex items-center gap-5">
@@ -282,7 +475,7 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
               <div>
                 <h2 className="text-lg font-black text-white tracking-wide mb-1">Cierre de Caja y Fiscal: Corte Z</h2>
                 <p className="text-xs text-slate-400 max-w-xl leading-relaxed">
-                  Al ejecutar esta acción, el sistema consolidará todas las ventas cobradas, desglosará el IVA y emitirá el ticket de auditoría físico. <strong className="text-rose-400 font-bold">Advertencia:</strong> Esto limpiará el flujo del salón e historizará las mesas actuales.
+                  Al ejecutar esta acción, el sistema consolidará todas las ventas, desglosará el IVA y sumará o restará los movimientos de caja registrados. <strong className="text-rose-400 font-bold">Advertencia:</strong> Esto limpiará el flujo del salón.
                 </p>
               </div>
             </div>
@@ -291,7 +484,6 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
             </button>
           </div>
 
-          {/* BUSCADOR UNIVERSAL Y TABLA DE VENTAS */}
           <div className="bg-[#0b1120] border border-slate-800 rounded-2xl p-6 shadow-xl">
             <div className="flex flex-col xl:flex-row xl:justify-between xl:items-end mb-6 pb-6 border-b border-slate-800/80 gap-6">
               <div>
@@ -368,7 +560,145 @@ export default function Dashboard({ reservaciones, onIniciarCorteZ }) {
             </div>
           </div>
         </div>
-      ) : (
+      )}
+
+      {/* 🔥 NUEVA PESTAÑA: LIQUIDACIÓN DE MESEROS 🔥 */}
+      {pestañaActiva === 'liquidacion' && (
+        <div className="animate-fade-in bg-[#0b1120] border border-slate-800 rounded-2xl p-6 shadow-xl min-h-[500px]">
+          <div className="mb-6 pb-6 border-b border-slate-800/80">
+            <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-3">
+              <span className="text-xl">👥</span> Liquidación Individual de Meseros
+            </h3>
+            <p className="text-xs text-slate-400 mt-1">Cálculo automático de propinas retenidas y efectivo a entregar a caja por cada mesero activo en este turno.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {liquidacionPorMesero.length === 0 ? (
+              <p className="text-slate-500 italic font-medium col-span-full py-10 text-center">Nadie ha cobrado mesas en este turno todavía.</p>
+            ) : (
+              liquidacionPorMesero.map((liq, idx) => {
+                const balanceFinal = liq.efectivo - liq.propinaTarjeta;
+                const debeEntregar = balanceFinal > 0;
+                const cajaDebePagar = balanceFinal < 0;
+
+                return (
+                  <div key={idx} className="bg-[#050812] border border-slate-800/80 rounded-2xl p-5 flex flex-col shadow-lg relative overflow-hidden group hover:border-slate-700 transition-colors">
+                    <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500/50"></div>
+                    
+                    <div className="flex justify-between items-start mb-4 pl-3">
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 block mb-1">Mesero en Turno</span>
+                        <h4 className="text-lg font-black text-white flex items-center gap-2">👤 {liq.mesero}</h4>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500 block mb-1">Venta Bruta</span>
+                        <span className="font-mono font-black text-emerald-400">${liq.totalVendido.toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 mb-5 pl-3 border-t border-slate-800/60 pt-4">
+                      <div className="flex justify-between text-xs text-slate-300">
+                        <span>Cobrado en Efectivo:</span>
+                        <span className="font-mono font-bold">${liq.efectivo.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-slate-400">
+                        <span>Cobrado con Tarjeta:</span>
+                        <span className="font-mono">${liq.tarjeta.toFixed(2)}</span>
+                      </div>
+                      <div className="border-t border-dashed border-slate-800 my-1"></div>
+                      <div className="flex justify-between text-xs text-amber-500/80">
+                        <span>Propinas recibidas en Efectivo:</span>
+                        <span className="font-mono">${liq.propinaEfectivo.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-amber-400 font-bold">
+                        <span>Propinas retenidas en Tarjeta:</span>
+                        <span className="font-mono">${liq.propinaTarjeta.toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    <div className={`mt-auto p-3 rounded-xl border flex justify-between items-center pl-4 ${
+                      debeEntregar ? 'bg-emerald-500/10 border-emerald-500/30' : 
+                      cajaDebePagar ? 'bg-rose-500/10 border-rose-500/30' : 
+                      'bg-slate-800/50 border-slate-700'
+                    }`}>
+                      <span className={`text-[10px] font-black uppercase tracking-widest leading-tight ${debeEntregar ? 'text-emerald-500' : cajaDebePagar ? 'text-rose-400' : 'text-slate-400'}`}>
+                        {debeEntregar ? 'Entregar a Caja:' : cajaDebePagar ? 'Caja le paga:' : 'En ceros (Paz)'}
+                      </span>
+                      <span className={`text-xl font-black font-mono tracking-tighter ${debeEntregar ? 'text-emerald-400' : cajaDebePagar ? 'text-rose-400' : 'text-slate-400'}`}>
+                        ${Math.abs(balanceFinal).toFixed(2)}
+                      </span>
+                    </div>
+
+                    <button 
+                      onClick={() => imprimirLiquidacionMesero(liq)}
+                      className="mt-4 w-full py-2.5 bg-slate-800 hover:bg-indigo-600 hover:text-white text-slate-300 font-bold text-[10px] uppercase tracking-widest rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      🖨️ Imprimir Recibo
+                    </button>
+
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {pestañaActiva === 'cancelaciones' && (
+        <div className="animate-fade-in bg-[#0b1120] border border-slate-800 rounded-2xl p-6 shadow-xl">
+          <div className="flex justify-between items-end mb-6 pb-6 border-b border-slate-800/80">
+            <div>
+              <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-3">
+                <span className="text-xl">🚫</span> Registro de Platillos Cancelados
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Platillos eliminados por meseros o chefs después de haber sido enviados a estación.</p>
+            </div>
+            <div className="text-right font-mono">
+              <span className="text-[10px] text-slate-500 block uppercase font-sans tracking-widest font-bold">Pérdida del Turno</span>
+              <span className="text-xl font-black text-rose-400">
+                ${cancelacionesTabla.reduce((acc, curr) => acc + (parseFloat(curr.precio) * curr.cantidad), 0).toFixed(2)}
+              </span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse font-sans text-xs">
+              <thead>
+                <tr className="border-b border-slate-800/80 text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                  <th className="pb-3 pl-2">Hora</th>
+                  <th className="pb-3">Platillo Cancelado</th>
+                  <th className="pb-3 text-center">Cant.</th>
+                  <th className="pb-3">Motivo Registrado</th>
+                  <th className="pb-3">Usuario / Estación</th>
+                  <th className="pb-3 text-right pr-2">Monto Perdido</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50 font-medium text-slate-300">
+                {cancelacionesTabla.length === 0 ? (
+                  <tr><td colSpan="6" className="text-center py-8 text-slate-500 italic">No hay cancelaciones registradas en este turno. ¡Excelente!</td></tr>
+                ) : (
+                  cancelacionesTabla.map(c => (
+                    <tr key={c.id} className="hover:bg-slate-900/50 transition-colors">
+                      <td className="py-3 pl-2 text-slate-500 font-mono text-[10px]">{c.hora_cancelacion}</td>
+                      <td className="py-3 font-bold text-slate-200">{c.platillo}</td>
+                      <td className="py-3 text-center font-mono">
+                        <span className="bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded text-[11px] font-bold">{c.cantidad}x</span>
+                      </td>
+                      <td className="py-3 text-amber-400/90 text-[11px] font-bold">{c.motivo}</td>
+                      <td className="py-3 text-slate-400">{c.usuario}</td>
+                      <td className="py-3 text-right font-mono font-black text-rose-400 pr-2">
+                        ${(parseFloat(c.precio) * c.cantidad).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {pestañaActiva === 'historial' && (
         <HistorialCortes />
       )}
 

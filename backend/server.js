@@ -38,9 +38,20 @@ async function inicializarBaseDeDatos() {
         direccion VARCHAR(255) DEFAULT 'Av. De los Héroes 123, Centro Cívico',
         telefono VARCHAR(50) DEFAULT '686 555 1234',
         mensaje_ticket VARCHAR(255) DEFAULT '¡Gracias por su preferencia!',
-        iva NUMERIC(5, 2) DEFAULT 16.00
+        iva NUMERIC(5, 2) DEFAULT 16.00,
+        notas_predefinidas JSONB DEFAULT '{"Alimentos":["Sin cebolla","Sin picante","Bien cocido","Sin tomate","Sin queso","Para llevar"],"Bebidas":["Poco hielo","Sin hielo","Extra limón","Sin popote","Para llevar"],"Postres":["Sin nueces","Extra chocolate","Para llevar"]}'::jsonb,
+        link_facturacion VARCHAR(255) DEFAULT 'https://facturas.sabor.io/facturar/'
       );
+      
       ALTER TABLE configuracion_restaurante ADD COLUMN IF NOT EXISTS iva NUMERIC(5, 2) DEFAULT 16.00;
+      ALTER TABLE configuracion_restaurante ADD COLUMN IF NOT EXISTS notas_predefinidas JSONB DEFAULT '{"Alimentos":["Sin cebolla","Sin picante","Bien cocido","Sin tomate","Sin queso","Para llevar"],"Bebidas":["Poco hielo","Sin hielo","Extra limón","Sin popote","Para llevar"],"Postres":["Sin nueces","Extra chocolate","Para llevar"]}'::jsonb;
+      
+      -- 🔥 INYECCIÓN DE COLUMNA PARA EL LINK DE FACTURACIÓN 🔥
+      ALTER TABLE configuracion_restaurante ADD COLUMN IF NOT EXISTS link_facturacion VARCHAR(255) DEFAULT 'https://facturas.sabor.io/facturar/';
+
+      UPDATE configuracion_restaurante 
+      SET notas_predefinidas = '{"Alimentos":["Sin cebolla","Sin picante","Bien cocido","Sin tomate","Sin queso","Para llevar"],"Bebidas":["Poco hielo","Sin hielo","Extra limón","Sin popote","Para llevar"],"Postres":["Sin nueces","Extra chocolate","Para llevar"]}'::jsonb 
+      WHERE jsonb_typeof(notas_predefinidas) = 'array';
 
       INSERT INTO configuracion_restaurante (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
@@ -51,6 +62,20 @@ async function inicializarBaseDeDatos() {
         rol VARCHAR(50) NOT NULL DEFAULT 'Mesero'
       );
 
+      CREATE TABLE IF NOT EXISTS clientes (
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(150) NOT NULL,
+        telefono VARCHAR(50) DEFAULT '',
+        correo VARCHAR(100) DEFAULT '',
+        direccion TEXT DEFAULT '',
+        notas TEXT DEFAULT '',
+        fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        rfc VARCHAR(20) DEFAULT '',
+        regimen_fiscal VARCHAR(100) DEFAULT '',
+        uso_cfdi VARCHAR(100) DEFAULT '',
+        codigo_postal VARCHAR(10) DEFAULT ''
+      );
+
       CREATE TABLE IF NOT EXISTS menu_restaurante (
         id SERIAL PRIMARY KEY,
         nombre VARCHAR(100) NOT NULL,
@@ -59,10 +84,13 @@ async function inicializarBaseDeDatos() {
         imagen TEXT DEFAULT '',
         descripcion TEXT DEFAULT '',
         orden INTEGER DEFAULT 0,
-        receta JSONB DEFAULT '[]'::jsonb
+        receta JSONB DEFAULT '[]'::jsonb,
+        grupos_modificadores JSONB DEFAULT '[]'::jsonb,
+        es_paquete BOOLEAN DEFAULT false,
+        promocion JSONB DEFAULT '{"activo": false, "dias": [], "inicio": "00:00", "fin": "23:59", "precio_promo": 0}'::jsonb
       );
-      ALTER TABLE menu_restaurante ADD COLUMN IF NOT EXISTS orden INTEGER DEFAULT 0;
-      ALTER TABLE menu_restaurante ADD COLUMN IF NOT EXISTS receta JSONB DEFAULT '[]'::jsonb;
+      
+      ALTER TABLE menu_restaurante ADD COLUMN IF NOT EXISTS promocion JSONB DEFAULT '{"activo": false, "dias": [], "inicio": "00:00", "fin": "23:59", "precio_promo": 0}'::jsonb;
 
       CREATE TABLE IF NOT EXISTS mesas (
         id SERIAL PRIMARY KEY,
@@ -98,15 +126,37 @@ async function inicializarBaseDeDatos() {
         tipo VARCHAR(50) DEFAULT 'General',
         etiqueta VARCHAR(50) DEFAULT '',
         color VARCHAR(100) DEFAULT 'from-blue-400 to-indigo-500',
-        num_mesa VARCHAR(20) DEFAULT NULL
+        num_mesa VARCHAR(20) DEFAULT NULL,
+        tipo_servicio VARCHAR(50) DEFAULT 'Comedor',
+        direccion_entrega TEXT DEFAULT ''
       );
-      ALTER TABLE reservaciones ADD COLUMN IF NOT EXISTS num_mesa VARCHAR(20);
 
       CREATE TABLE IF NOT EXISTS historial_cortes (
         id SERIAL PRIMARY KEY,
         fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         usuario VARCHAR(100),
         datos JSONB
+      );
+
+      CREATE TABLE IF NOT EXISTS movimientos_caja (
+        id SERIAL PRIMARY KEY,
+        tipo VARCHAR(20) NOT NULL,
+        monto NUMERIC(10, 2) NOT NULL DEFAULT 0,
+        concepto VARCHAR(255) NOT NULL,
+        fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        usuario VARCHAR(100) DEFAULT 'Admin',
+        corte_aplicado BOOLEAN DEFAULT false
+      );
+
+      CREATE TABLE IF NOT EXISTS cancelaciones (
+        id SERIAL PRIMARY KEY,
+        platillo VARCHAR(150),
+        cantidad INTEGER,
+        precio NUMERIC(10, 2),
+        motivo TEXT,
+        usuario VARCHAR(100),
+        fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        corte_aplicado BOOLEAN DEFAULT false
       );
 
       CREATE SEQUENCE IF NOT EXISTS folio_ventas_seq START 1000;
@@ -128,17 +178,11 @@ async function inicializarBaseDeDatos() {
         pago_tarjeta NUMERIC(10, 2) DEFAULT 0,
         propina_efectivo NUMERIC(10, 2) DEFAULT 0,
         propina_tarjeta NUMERIC(10, 2) DEFAULT 0,
-        descuento NUMERIC(10, 2) DEFAULT 0
+        descuento NUMERIC(10, 2) DEFAULT 0,
+        tipo_servicio VARCHAR(50) DEFAULT 'Comedor',
+        direccion_entrega TEXT DEFAULT ''
       );
-      ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS cliente VARCHAR(150) DEFAULT 'General';
-      ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS personas INTEGER DEFAULT 1;
-      ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS pago_efectivo NUMERIC(10, 2) DEFAULT 0;
-      ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS pago_tarjeta NUMERIC(10, 2) DEFAULT 0;
-      ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS propina_efectivo NUMERIC(10, 2) DEFAULT 0;
-      ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS propina_tarjeta NUMERIC(10, 2) DEFAULT 0;
-      
-      -- 🔥 COLUMNA DE DESCUENTO AÑADIDA 🔥
-      ALTER TABLE historial_ventas ADD COLUMN IF NOT EXISTS descuento NUMERIC(10, 2) DEFAULT 0;
+
     `);
 
     const checkMesas = await pool.query("SELECT * FROM mesas LIMIT 1");
@@ -152,7 +196,50 @@ async function inicializarBaseDeDatos() {
       `);
     }
 
-    console.log('✅ PostgreSQL: Estructuras blindadas listas.');
+    const checkBurger = await pool.query("SELECT id FROM menu_restaurante WHERE nombre = 'Hamburguesa Modificable'");
+    if (checkBurger.rows.length === 0) {
+      await pool.query(`
+        INSERT INTO menu_restaurante (nombre, categoria, precio, imagen, grupos_modificadores) 
+        VALUES (
+          'Hamburguesa Modificable', 'Platos Fuertes', 150.00, '🍔',
+          '[
+            {"nombre": "Término de la Carne", "min": 1, "max": 1, "opciones": [{"nombre": "Medio", "precio": 0}, {"nombre": "3/4", "precio": 0}, {"nombre": "Bien Cocida", "precio": 0}]},
+            {"nombre": "Añade Extras", "min": 0, "max": 3, "opciones": [{"nombre": "Tocino", "precio": 25}, {"nombre": "Queso Cheddar", "precio": 15}, {"nombre": "Champiñones", "precio": 20}]}
+          ]'
+        )
+      `);
+    }
+
+    const checkBebida = await pool.query("SELECT id FROM menu_restaurante WHERE nombre = 'Margarita Clásica'");
+    if (checkBebida.rows.length === 0) {
+      await pool.query(`
+        INSERT INTO menu_restaurante (nombre, categoria, precio, imagen, grupos_modificadores, promocion) 
+        VALUES (
+          'Margarita Clásica', 'Coctelería', 120.00, '🍹',
+          '[
+            {"nombre": "Escarchado", "min": 1, "max": 1, "opciones": [{"nombre": "Sal", "precio": 0}, {"nombre": "Tajín", "precio": 0}, {"nombre": "Azúcar", "precio": 0}, {"nombre": "Sin Escarcha", "precio": 0}]},
+            {"nombre": "Sabor", "min": 1, "max": 1, "opciones": [{"nombre": "Limón", "precio": 0}, {"nombre": "Mango", "precio": 10}, {"nombre": "Fresa", "precio": 10}, {"nombre": "Tamarindo", "precio": 15}]}
+          ]',
+          '{"activo": true, "dias": [0,1,2,3,4,5,6], "inicio": "00:00", "fin": "23:59", "precio_promo": 60}'
+        )
+      `);
+    } else {
+      await pool.query(`
+        UPDATE menu_restaurante 
+        SET promocion = '{"activo": true, "dias": [0,1,2,3,4,5,6], "inicio": "00:00", "fin": "23:59", "precio_promo": 70}'::jsonb 
+        WHERE nombre = 'Margarita Clásica'
+      `);
+    }
+
+    const checkCliente = await pool.query("SELECT id FROM clientes LIMIT 1");
+    if (checkCliente.rows.length === 0) {
+      await pool.query(`
+        INSERT INTO clientes (nombre, telefono, direccion, notas) VALUES 
+        ('Juan Pérez', '5551234567', 'Calle Falsa 123, Col. Centro', 'Cliente frecuente, prefiere pagar con tarjeta')
+      `);
+    }
+
+    console.log('✅ PostgreSQL: Estructuras listas (Motor Happy Hour e Impresión Factura Integrados).');
   } catch (err) { console.error('❌ Error SQL:', err); }
 }
 inicializarBaseDeDatos();
@@ -160,9 +247,6 @@ inicializarBaseDeDatos();
 let comandasActivas = {};
 let pedidosCocina = [];
 
-// =========================================================================
-// ENDPOINTS GENERALES
-// =========================================================================
 app.post('/api/login', async (req, res) => {
   const { pin } = req.body;
   if (!pin || pin.length !== 4) return res.status(400).json({ error: 'PIN requerido' });
@@ -190,11 +274,43 @@ app.get('/api/configuracion', async (req, res) => {
   try { const result = await pool.query('SELECT * FROM configuracion_restaurante WHERE id = 1'); res.json(result.rows[0]); } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// 🔥 ACTUALIZADO PARA RECIBIR Y GUARDAR EL LINK DE FACTURACIÓN 🔥
 app.put('/api/configuracion', async (req, res) => {
-  const { nombre_negocio, rfc, direccion, telefono, mensaje_ticket, iva } = req.body;
+  const { nombre_negocio, rfc, direccion, telefono, mensaje_ticket, iva, notas_predefinidas, link_facturacion } = req.body;
   try { 
-    const result = await pool.query('UPDATE configuracion_restaurante SET nombre_negocio=$1, rfc=$2, direccion=$3, telefono=$4, mensaje_ticket=$5, iva=$6 WHERE id=1 RETURNING *', [nombre_negocio, rfc, direccion, telefono, mensaje_ticket, iva || 16.00]); 
+    const notasStr = notas_predefinidas 
+      ? JSON.stringify(notas_predefinidas) 
+      : '{"Alimentos":["Sin cebolla","Sin picante","Bien cocido","Sin tomate","Sin queso","Para llevar"],"Bebidas":["Poco hielo","Sin hielo","Extra limón","Sin popote","Para llevar"],"Postres":["Sin nueces","Extra chocolate","Para llevar"]}';
+      
+    const result = await pool.query(
+      'UPDATE configuracion_restaurante SET nombre_negocio=$1, rfc=$2, direccion=$3, telefono=$4, mensaje_ticket=$5, iva=$6, notas_predefinidas=$7, link_facturacion=$8 WHERE id=1 RETURNING *', 
+      [nombre_negocio, rfc, direccion, telefono, mensaje_ticket, iva || 16.00, notasStr, link_facturacion]
+    ); 
     io.emit('salon_actualizado');   
+    res.json(result.rows[0]); 
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/clientes', async (req, res) => {
+  try { const result = await pool.query('SELECT * FROM clientes ORDER BY nombre ASC'); res.json(result.rows); } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.post('/api/clientes', async (req, res) => {
+  try { 
+    const { nombre, telefono, correo, direccion, notas, rfc, regimen_fiscal, uso_cfdi, codigo_postal } = req.body;
+    const result = await pool.query(
+      'INSERT INTO clientes (nombre, telefono, correo, direccion, notas, rfc, regimen_fiscal, uso_cfdi, codigo_postal) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *', 
+      [nombre, telefono || '', correo || '', direccion || '', notas || '', rfc || '', regimen_fiscal || '', uso_cfdi || '', codigo_postal || '']
+    ); 
+    res.status(201).json(result.rows[0]); 
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.put('/api/clientes/:id', async (req, res) => {
+  try { 
+    const { nombre, telefono, correo, direccion, notas, rfc, regimen_fiscal, uso_cfdi, codigo_postal } = req.body;
+    const result = await pool.query(
+      'UPDATE clientes SET nombre=$1, telefono=$2, correo=$3, direccion=$4, notas=$5, rfc=$6, regimen_fiscal=$7, uso_cfdi=$8, codigo_postal=$9 WHERE id=$10 RETURNING *', 
+      [nombre, telefono, correo, direccion, notas, rfc, regimen_fiscal, uso_cfdi, codigo_postal, req.params.id]
+    ); 
     res.json(result.rows[0]); 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -219,7 +335,13 @@ app.get('/api/menu', async (req, res) => {
 app.post('/api/menu', async (req, res) => {
   try { 
     const recetaJSON = JSON.stringify(req.body.receta || []);
-    const result = await pool.query('INSERT INTO menu_restaurante (nombre, categoria, precio, imagen, descripcion, orden, receta) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *', [req.body.nombre, req.body.categoria || 'Platos Fuertes', req.body.precio || 0, req.body.imagen || '', req.body.descripcion || '', req.body.orden || 0, recetaJSON]); 
+    const gruposJSON = JSON.stringify(req.body.grupos_modificadores || []);
+    const promoJSON = JSON.stringify(req.body.promocion || { activo: false, dias: [], inicio: '00:00', fin: '23:59', precio_promo: 0 });
+
+    const result = await pool.query(
+      'INSERT INTO menu_restaurante (nombre, categoria, precio, imagen, descripcion, orden, receta, grupos_modificadores, promocion) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *', 
+      [req.body.nombre, req.body.categoria || 'Platos Fuertes', req.body.precio || 0, req.body.imagen || '', req.body.descripcion || '', req.body.orden || 0, recetaJSON, gruposJSON, promoJSON]
+    ); 
     io.emit('salon_actualizado'); res.status(201).json(result.rows[0]); 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -239,7 +361,6 @@ app.put('/api/menu/reordenar', async (req, res) => {
     res.json({ success: true });
   } catch (error) { 
     await client.query('ROLLBACK'); 
-    console.error("Error SQL al reordenar: ", error);
     res.status(500).json({ error: 'Fallo al reordenar el menú' }); 
   } finally { 
     client.release(); 
@@ -249,7 +370,13 @@ app.put('/api/menu/reordenar', async (req, res) => {
 app.put('/api/menu/:id', async (req, res) => {
   try { 
     const recetaJSON = JSON.stringify(req.body.receta || []);
-    const result = await pool.query('UPDATE menu_restaurante SET nombre=$1, categoria=$2, precio=$3, imagen=$4, descripcion=$5, receta=$6 WHERE id=$7 RETURNING *', [req.body.nombre, req.body.categoria, req.body.precio, req.body.imagen, req.body.descripcion, recetaJSON, req.params.id]); 
+    const gruposJSON = JSON.stringify(req.body.grupos_modificadores || []);
+    const promoJSON = JSON.stringify(req.body.promocion || { activo: false, dias: [], inicio: '00:00', fin: '23:59', precio_promo: 0 });
+
+    const result = await pool.query(
+      'UPDATE menu_restaurante SET nombre=$1, categoria=$2, precio=$3, imagen=$4, descripcion=$5, receta=$6, grupos_modificadores=$7, promocion=$8 WHERE id=$9 RETURNING *', 
+      [req.body.nombre, req.body.categoria, req.body.precio, req.body.imagen, req.body.descripcion, recetaJSON, gruposJSON, promoJSON, req.params.id]
+    ); 
     io.emit('salon_actualizado'); res.json(result.rows[0]); 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -332,18 +459,31 @@ app.get('/api/reservaciones', async (req, res) => {
 app.post('/api/reservaciones', async (req, res) => {
   try { 
     const result = await pool.query(
-      'INSERT INTO reservaciones (nombre, fecha, hora, personas, telefono, tipo, etiqueta, color) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *', 
-      [req.body.nombre, req.body.fecha, req.body.hora, req.body.personas, req.body.telefono || '', req.body.tipo || 'General', req.body.etiqueta || '', req.body.color || 'from-blue-400 to-indigo-500']
+      'INSERT INTO reservaciones (nombre, fecha, hora, personas, telefono, tipo, etiqueta, color, tipo_servicio, direccion_entrega, num_mesa, estado) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *', 
+      [
+        req.body.nombre, 
+        req.body.fecha, 
+        req.body.hora, 
+        req.body.personas, 
+        req.body.telefono || '', 
+        req.body.tipo || 'General', 
+        req.body.etiqueta || '', 
+        req.body.color || 'from-blue-400 to-indigo-500',
+        req.body.tipo_servicio || 'Comedor',
+        req.body.direccion_entrega || '',
+        req.body.numMesa || null,
+        req.body.estado || 'pendientes'
+      ]
     ); 
     io.emit('salon_actualizado'); res.status(201).json(result.rows[0]); 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 app.put('/api/reservaciones/:id', async (req, res) => {
   const { id } = req.params;
-  const { nombre, fecha, hora, personas, telefono, tipo, etiqueta, color, numMesa } = req.body;
+  const { nombre, fecha, hora, personas, telefono, tipo, etiqueta, color, numMesa, tipo_servicio, direccion_entrega } = req.body;
   try {
-    const query = `UPDATE reservaciones SET nombre=COALESCE($1,nombre), fecha=COALESCE($2,fecha), hora=COALESCE($3,hora), personas=COALESCE($4,personas), telefono=COALESCE($5,telefono), tipo=COALESCE($6,tipo), etiqueta=COALESCE($7,etiqueta), color=COALESCE($8,color), num_mesa=COALESCE($9,num_mesa) WHERE id=$10 RETURNING *`;
-    const result = await pool.query(query, [nombre, fecha, hora, personas, telefono, tipo, etiqueta, color, numMesa, id]);
+    const query = `UPDATE reservaciones SET nombre=COALESCE($1,nombre), fecha=COALESCE($2,fecha), hora=COALESCE($3,hora), personas=COALESCE($4,personas), telefono=COALESCE($5,telefono), tipo=COALESCE($6,tipo), etiqueta=COALESCE($7,etiqueta), color=COALESCE($8,color), num_mesa=COALESCE($9,num_mesa), tipo_servicio=COALESCE($10,tipo_servicio), direccion_entrega=COALESCE($11,direccion_entrega) WHERE id=$12 RETURNING *`;
+    const result = await pool.query(query, [nombre, fecha, hora, personas, telefono, tipo, etiqueta, color, numMesa, tipo_servicio, direccion_entrega, id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'No encontrado' });
     io.emit('salon_actualizado'); res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -361,7 +501,8 @@ app.post('/api/comandas/:idReserva', (req, res) => { comandasActivas[req.params.
 app.get('/api/cocina', (req, res) => res.json(pedidosCocina.filter(p => p.estado === 'pendiente')));
 
 app.post('/api/cocina', (req, res) => { 
-  const nuevo = { id: Date.now(), numMesa: req.body.numMesa, platillos: req.body.platillos, estado: 'pendiente', hora: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }; 
+  const nuevoId = Date.now() + Math.floor(Math.random() * 10000);
+  const nuevo = { id: nuevoId, numMesa: req.body.numMesa, platillos: req.body.platillos, estado: 'pendiente', hora: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }; 
   pedidosCocina.push(nuevo); 
   io.emit('salon_actualizado'); 
   res.status(201).json(nuevo); 
@@ -401,9 +542,52 @@ app.delete('/api/cocina/:id', (req, res) => {
   }
 });
 
+app.get('/api/movimientos', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM movimientos_caja WHERE corte_aplicado = false ORDER BY id DESC');
+    res.json(result.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/movimientos', async (req, res) => {
+  try {
+    const { tipo, monto, concepto, usuario } = req.body;
+    const result = await pool.query(
+      'INSERT INTO movimientos_caja (tipo, monto, concepto, usuario) VALUES ($1, $2, $3, $4) RETURNING *',
+      [tipo, parseFloat(monto) || 0, concepto, usuario || 'Admin']
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/cancelaciones', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT id, platillo, cantidad, precio, motivo, usuario, 
+             TO_CHAR(fecha, 'DD/MM/YYYY HH12:MI AM') as hora_cancelacion
+      FROM cancelaciones 
+      WHERE corte_aplicado = false 
+      ORDER BY id DESC
+    `);
+    res.json(result.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/cancelaciones', async (req, res) => {
+  try {
+    const { platillo, cantidad, precio, motivo, usuario } = req.body;
+    const result = await pool.query(
+      'INSERT INTO cancelaciones (platillo, cantidad, precio, motivo, usuario) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [platillo, cantidad, parseFloat(precio) || 0, motivo, usuario || 'Usuario']
+    );
+    io.emit('salon_actualizado'); 
+    res.status(201).json(result.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/cobrar/:idReserva', async (req, res) => {
   const { idReserva } = req.params;
-  const { mesero, platillos, subtotal, iva, total, mesaNum, cliente, personas, desglosePago, desglosePropina, descuento } = req.body;
+  const { mesero, platillos, subtotal, iva, total, mesaNum, cliente, personas, desglosePago, desglosePropina, descuento, tipo_servicio, direccion_entrega } = req.body;
 
   const pagoEfectivo = desglosePago?.efectivo || 0;
   const pagoTarjeta = desglosePago?.tarjeta || 0;
@@ -435,23 +619,22 @@ app.post('/api/cobrar/:idReserva', async (req, res) => {
     const folioRes = await client.query(`SELECT NEXTVAL('folio_ventas_seq') as num`);
     const folio = `V-${folioRes.rows[0].num}`;
 
-    // 🔥 INSERCIÓN CORREGIDA (Incluye Descuento en la Base de Datos) 🔥
     await client.query(`
       INSERT INTO historial_ventas (
         folio, num_mesa, mesero, cliente, personas, items_consumidos, subtotal, iva, total, 
-        pago_efectivo, pago_tarjeta, propina_efectivo, propina_tarjeta, descuento
+        pago_efectivo, pago_tarjeta, propina_efectivo, propina_tarjeta, descuento, tipo_servicio, direccion_entrega
       ) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
     `, [
       folio, mesaNum || 'Barra', mesero || 'Mesero', cliente || 'General', parseInt(personas) || 1, 
       JSON.stringify(platillos || []), subtotal || 0, iva || 0, total || 0,
-      pagoEfectivo, pagoTarjeta, propEfectivo, propTarjeta, descuentoTotal
+      pagoEfectivo, pagoTarjeta, propEfectivo, propTarjeta, descuentoTotal,
+      tipo_servicio || 'Comedor', direccion_entrega || ''
     ]);
 
     await client.query('UPDATE reservaciones SET estado = $1 WHERE id = $2', ['finalizadas', idReserva]);
     delete comandasActivas[idReserva];
 
-    // MOTOR DE ESCANDALLOS: DESCUENTA INVENTARIO AUTOMÁTICAMENTE
     for (const platoComprado of (platillos || [])) {
       const dbMenu = await client.query('SELECT receta FROM menu_restaurante WHERE nombre = $1 LIMIT 1', [platoComprado.nombre]);
       
@@ -494,11 +677,20 @@ app.get('/api/cortes/preview', async (req, res) => {
         propina_efectivo,
         propina_tarjeta,
         descuento,
-        items_consumidos
+        items_consumidos,
+        tipo_servicio
       FROM historial_ventas 
       WHERE DATE(fecha_cobro) = CURRENT_DATE 
         AND corte_aplicado = false
     `);
+
+    const movRes = await pool.query(`SELECT tipo, monto, concepto FROM movimientos_caja WHERE corte_aplicado = false`);
+    let entradasCaja = 0;
+    let salidasCaja = 0;
+    movRes.rows.forEach(m => {
+      if(m.tipo === 'entrada') entradasCaja += parseFloat(m.monto);
+      if(m.tipo === 'salida') salidasCaja += parseFloat(m.monto);
+    });
     
     const now = new Date();
     const folioTurno = `TURNO-${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
@@ -509,7 +701,10 @@ app.get('/api/cortes/preview', async (req, res) => {
       fecha: now.toLocaleDateString('es-MX'),
       hora: now.toLocaleTimeString('es-MX'),
       ventas: result.rows,
-      granTotal
+      granTotal,
+      entradasCaja, 
+      salidasCaja,   
+      movimientosDetalle: movRes.rows
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -519,6 +714,9 @@ app.post('/api/cortes', async (req, res) => {
   try {
     await client.query('BEGIN');
     await client.query(`UPDATE historial_ventas SET corte_aplicado = true WHERE corte_aplicado = false`);
+    await client.query(`UPDATE movimientos_caja SET corte_aplicado = true WHERE corte_aplicado = false`); 
+    await client.query(`UPDATE cancelaciones SET corte_aplicado = true WHERE corte_aplicado = false`); 
+
     const corteSQL = await client.query(`INSERT INTO historial_cortes (usuario, datos) VALUES ($1,$2) RETURNING *`, [req.body.usuarioCierre || 'Admin', req.body.datosCorte]);
     await client.query(`UPDATE reservaciones SET estado = 'finalizadas' WHERE estado = 'en-curso';`);
     comandasActivas = {}; 
@@ -590,7 +788,7 @@ app.get('/api/finanzas/historial-ventas', async (req, res) => {
     SELECT id, folio, num_mesa, mesero, cliente, personas, subtotal, iva, total, corte_aplicado, 
            TO_CHAR(fecha_cobro, 'DD/MM/YYYY HH12:MI AM') as hora_cobro,
            pago_efectivo, pago_tarjeta, propina_efectivo, propina_tarjeta, descuento,
-           items_consumidos
+           items_consumidos, tipo_servicio
     FROM historial_ventas
     WHERE 1=1
   `;
